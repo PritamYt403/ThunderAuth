@@ -1,0 +1,67 @@
+
+settings:
+  security:
+    one-account-per-identity: true
+    bedrock-floodgate-support: true
+    reject-unverified-bedrock-identity: true
+
+  password:
+    min-length: 6
+    max-length: 64
+
+  login:
+    timeout-seconds: 60
+    max-attempts: 5
+    reminder-interval-seconds: 5
+    block-movement: true
+    block-chat: true
+    block-commands: true
+    hide-inventory: true
+    blindness: true
+    block-mining: true
+    block-block-placement: true
+    block-item-use: true
+    block-interactions: true
+
+  session:
+    remember-after-quit: true
+    duration-minutes: 30
+
+  bossbar:
+    enabled: true
+    countdown: true
+    color: RED
+    style: SOLID
+
+  titles:
+    enabled: true
+    fade-in: 5
+    stay: 40
+    fade-out: 10
+
+  announcements:
+    welcome-on-register: true
+    welcome-on-login: true
+
+  spawn:
+    first-registration-enabled: true
+    first-registration-world: world
+    first-registration-x: 10.5
+    first-registration-y: 65.0
+    first-registration-z: 10.5
+    normal-world: world
+    normal-x: 0.5
+    normal-y: 65.0
+    normal-z: 0.5
+
+permissions:
+  login-default: true
+  register-default: true
+  password-change-default: true
+
+integrations:
+  floodgate:
+    enabled: true
+
+branding:
+  author: Pritam
