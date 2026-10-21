@@ -45,9 +45,9 @@ public final class AuthCommands implements CommandExecutor {
             case "thunderauth":
                 return handleAdmin(sender, args);
             case "setlogspawn":
-                return handleSetSpawn(sender, true);
+                return handleSetLoginSpawn(sender);
             case "setregspawn":
-                return handleSetSpawn(sender, false);
+                return handleSetRegistrationSpawn(sender);
             default:
                 return false;
         }
@@ -55,12 +55,7 @@ public final class AuthCommands implements CommandExecutor {
 
     private String getIdentity(Player player) {
         FloodgateHook hook = plugin.getFloodgateHook();
-
-        if (hook == null) {
-            return null;
-        }
-
-        return hook.getIdentity(player);
+        return hook == null ? null : hook.getIdentity(player);
     }
 
     private boolean handleRegister(CommandSender sender, String[] args) {
@@ -134,7 +129,8 @@ public final class AuthCommands implements CommandExecutor {
                     "announcements.registered")
                     .replace("%player%", player.getName()));
 
-            teleportToConfiguredSpawn(player, true);
+            // Registration successful: send the player to the saved main spawn.
+            teleportToLoginSpawn(player);
         } else {
             player.sendMessage(plugin.message(
                     "authentication.already-registered"));
@@ -197,7 +193,8 @@ public final class AuthCommands implements CommandExecutor {
                     "announcements.logged-in")
                     .replace("%player%", player.getName()));
 
-            teleportToConfiguredSpawn(player, false);
+            // Do not teleport here: AuthManager/AuthListener will restore
+            // the player's saved return location after authentication.
         } else if (player.isOnline()) {
             player.sendMessage(plugin.message(
                     "authentication.wrong-password"));
@@ -206,10 +203,7 @@ public final class AuthCommands implements CommandExecutor {
         return true;
     }
 
-    private boolean handleSetSpawn(
-            CommandSender sender,
-            boolean loginSpawn
-    ) {
+    private boolean handleSetLoginSpawn(CommandSender sender) {
         if (!sender.hasPermission("thunderauth.admin")) {
             sender.sendMessage(plugin.message("commands.no-permission"));
             return true;
@@ -220,18 +214,38 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        Location location = player.getLocation();
-        World world = location.getWorld();
+        saveSpawn(player.getLocation(), "settings.spawn.normal-");
+        player.sendMessage(plugin.color("&aLogin spawn location saved!"));
+        return true;
+    }
 
-        if (world == null) {
-            player.sendMessage(plugin.color(
-                    "&cCould not determine your current world."));
+    private boolean handleSetRegistrationSpawn(CommandSender sender) {
+        if (!sender.hasPermission("thunderauth.admin")) {
+            sender.sendMessage(plugin.message("commands.no-permission"));
             return true;
         }
 
-        String base = loginSpawn
-                ? "settings.spawn.normal-"
-                : "settings.spawn.first-registration-";
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(plugin.message("commands.player-only"));
+            return true;
+        }
+
+        saveSpawn(player.getLocation(), "settings.spawn.first-registration-");
+        plugin.getConfig().set(
+                "settings.spawn.first-registration-enabled", true);
+        plugin.saveConfig();
+
+        player.sendMessage(plugin.color(
+                "&aRegistration spawn location saved!"));
+        return true;
+    }
+
+    private void saveSpawn(Location location, String base) {
+        World world = location.getWorld();
+
+        if (world == null) {
+            return;
+        }
 
         plugin.getConfig().set(base + "world", world.getName());
         plugin.getConfig().set(base + "x", location.getX());
@@ -239,35 +253,11 @@ public final class AuthCommands implements CommandExecutor {
         plugin.getConfig().set(base + "z", location.getZ());
         plugin.getConfig().set(base + "yaw", location.getYaw());
         plugin.getConfig().set(base + "pitch", location.getPitch());
-
-        if (!loginSpawn) {
-            plugin.getConfig().set(
-                    "settings.spawn.first-registration-enabled", true);
-        }
-
         plugin.saveConfig();
-
-        player.sendMessage(plugin.color(
-                loginSpawn
-                        ? "&aLogin spawn location saved!"
-                        : "&aRegistration spawn location saved!"));
-
-        return true;
     }
 
-    private void teleportToConfiguredSpawn(
-            Player player,
-            boolean firstRegistration
-    ) {
-        if (firstRegistration && !plugin.getConfig().getBoolean(
-                "settings.spawn.first-registration-enabled", true)) {
-            return;
-        }
-
-        String base = firstRegistration
-                ? "settings.spawn.first-registration-"
-                : "settings.spawn.normal-";
-
+    private void teleportToLoginSpawn(Player player) {
+        String base = "settings.spawn.normal-";
         String worldName = plugin.getConfig().getString(
                 base + "world", "world");
 
@@ -275,17 +265,20 @@ public final class AuthCommands implements CommandExecutor {
 
         if (world == null) {
             plugin.getLogger().warning(
-                    "Spawn world '" + worldName + "' was not found.");
+                    "Login spawn world '" + worldName + "' was not found.");
             return;
         }
 
-        double x = plugin.getConfig().getDouble(base + "x", 0.5);
-        double y = plugin.getConfig().getDouble(base + "y", 65.0);
-        double z = plugin.getConfig().getDouble(base + "z", 0.5);
-        float yaw = (float) plugin.getConfig().getDouble(base + "yaw", 0.0);
-        float pitch = (float) plugin.getConfig().getDouble(base + "pitch", 0.0);
+        Location spawn = new Location(
+                world,
+                plugin.getConfig().getDouble(base + "x", 0.5),
+                plugin.getConfig().getDouble(base + "y", 65.0),
+                plugin.getConfig().getDouble(base + "z", 0.5),
+                (float) plugin.getConfig().getDouble(base + "yaw", 0.0),
+                (float) plugin.getConfig().getDouble(base + "pitch", 0.0)
+        );
 
-        player.teleport(new Location(world, x, y, z, yaw, pitch));
+        player.teleport(spawn);
     }
 
     private boolean handlePasswordChange(
@@ -298,8 +291,7 @@ public final class AuthCommands implements CommandExecutor {
         }
 
         if (args.length != 2) {
-            player.sendMessage(plugin.messageWithoutPrefix(
-                    "password.usage"));
+            player.sendMessage(plugin.messageWithoutPrefix("password.usage"));
             return true;
         }
 
