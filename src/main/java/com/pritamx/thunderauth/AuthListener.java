@@ -31,6 +31,8 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 
+import java.util.Locale;
+
 public final class AuthListener implements Listener {
 
     private final ThunderAuth plugin;
@@ -43,6 +45,11 @@ public final class AuthListener implements Listener {
 
     private boolean restricted(Player player) {
         return !auth.isAuthenticated(player);
+    }
+
+    private boolean enabled(String key, boolean defaultValue) {
+        return plugin.getConfig().getBoolean(
+                "settings.login." + key, defaultValue);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -62,8 +69,8 @@ public final class AuthListener implements Listener {
                 return;
             }
 
-            teleportToLoginSpawn(player);
             applyRestrictions(player);
+            teleportToLoginSpawn(player);
 
             boolean registered = auth.hasAccount(player.getUniqueId());
 
@@ -72,9 +79,7 @@ public final class AuthListener implements Listener {
                             ? "authentication.login-required"
                             : "authentication.register-required"));
 
-            if (plugin.getBossBarManager() != null
-                    && plugin.getConfig().getBoolean(
-                    "settings.bossbar.enabled", true)) {
+            if (plugin.getBossBarManager() != null) {
                 plugin.getBossBarManager().start(player);
             }
 
@@ -123,13 +128,11 @@ public final class AuthListener implements Listener {
     }
 
     private void applyRestrictions(Player player) {
-        if (plugin.getConfig().getBoolean(
-                "settings.login.hide-inventory", true)) {
+        if (enabled("hide-inventory", true)) {
             player.closeInventory();
         }
 
-        if (plugin.getConfig().getBoolean(
-                "settings.login.blindness", true)) {
+        if (enabled("blindness", true)) {
             player.addPotionEffect(new PotionEffect(
                     PotionEffectType.BLINDNESS,
                     Integer.MAX_VALUE, 0, false, false, false));
@@ -167,8 +170,7 @@ public final class AuthListener implements Listener {
 
         Player player = event.getPlayer();
 
-        if (!restricted(player) || !plugin.getConfig().getBoolean(
-                "settings.login.block-movement", true)) {
+        if (!restricted(player) || !enabled("block-movement", true)) {
             return;
         }
 
@@ -185,8 +187,7 @@ public final class AuthListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onChat(AsyncPlayerChatEvent event) {
-        if (restricted(event.getPlayer()) && plugin.getConfig().getBoolean(
-                "settings.login.block-chat", true)) {
+        if (restricted(event.getPlayer()) && enabled("block-chat", true)) {
             event.setCancelled(true);
         }
     }
@@ -195,14 +196,14 @@ public final class AuthListener implements Listener {
     public void onCommand(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();
 
-        if (!restricted(player) || !plugin.getConfig().getBoolean(
-                "settings.login.block-commands", true)) {
+        if (!restricted(player) || !enabled("block-commands", true)) {
             return;
         }
 
         String root = event.getMessage()
-                .toLowerCase(java.util.Locale.ROOT)
-                .trim().split("\\s+", 2)[0];
+                .toLowerCase(Locale.ROOT)
+                .trim()
+                .split("\\s+", 2)[0];
 
         if (root.equals("/login") || root.equals("/register")
                 || root.equals("/l") || root.equals("/reg")) {
@@ -211,29 +212,31 @@ public final class AuthListener implements Listener {
 
         event.setCancelled(true);
         player.sendMessage(plugin.message(
-                "authentication.login-required"));
+                auth.hasAccount(player.getUniqueId())
+                        ? "authentication.login-required"
+                        : "authentication.register-required"));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
-        if (restricted(event.getPlayer()) && plugin.getConfig().getBoolean(
-                "settings.login.block-mining", true)) {
+        if (restricted(event.getPlayer())
+                && enabled("block-mining", true)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
-        if (restricted(event.getPlayer()) && plugin.getConfig().getBoolean(
-                "settings.login.block-block-placement", true)) {
+        if (restricted(event.getPlayer())
+                && enabled("block-block-placement", true)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInteract(PlayerInteractEvent event) {
-        if (restricted(event.getPlayer()) && plugin.getConfig().getBoolean(
-                "settings.login.block-interactions", true)) {
+        if (restricted(event.getPlayer())
+                && enabled("block-interactions", true)) {
             event.setCancelled(true);
         }
     }
@@ -241,8 +244,7 @@ public final class AuthListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInventoryClick(InventoryClickEvent event) {
         if (event.getWhoClicked() instanceof Player player
-                && restricted(player) && plugin.getConfig().getBoolean(
-                "settings.login.hide-inventory", true)) {
+                && restricted(player) && enabled("hide-inventory", true)) {
             event.setCancelled(true);
         }
     }
@@ -250,8 +252,7 @@ public final class AuthListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInventoryDrag(InventoryDragEvent event) {
         if (event.getWhoClicked() instanceof Player player
-                && restricted(player) && plugin.getConfig().getBoolean(
-                "settings.login.hide-inventory", true)) {
+                && restricted(player) && enabled("hide-inventory", true)) {
             event.setCancelled(true);
         }
     }
@@ -259,36 +260,31 @@ public final class AuthListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInventoryOpen(InventoryOpenEvent event) {
         if (event.getPlayer() instanceof Player player
-                && restricted(player) && plugin.getConfig().getBoolean(
-                "settings.login.hide-inventory", true)) {
+                && restricted(player) && enabled("hide-inventory", true)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDrop(PlayerDropItemEvent event) {
-        if (restricted(event.getPlayer()) && plugin.getConfig().getBoolean(
-                "settings.login.block-item-drop",
-                plugin.getConfig().getBoolean(
-                        "settings.login.block-item-use", true))) {
+        if (restricted(event.getPlayer())
+                && enabled("block-item-drop", true)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSwap(PlayerSwapHandItemsEvent event) {
-        if (restricted(event.getPlayer()) && plugin.getConfig().getBoolean(
-                "settings.login.block-hand-swap",
-                plugin.getConfig().getBoolean(
-                        "settings.login.block-item-use", true))) {
+        if (restricted(event.getPlayer())
+                && enabled("block-hand-swap", true)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onConsume(PlayerItemConsumeEvent event) {
-        if (restricted(event.getPlayer()) && plugin.getConfig().getBoolean(
-                "settings.login.block-item-use", true)) {
+        if (restricted(event.getPlayer())
+                && enabled("block-item-use", true)) {
             event.setCancelled(true);
         }
     }
@@ -298,10 +294,7 @@ public final class AuthListener implements Listener {
         Entity entity = event.getEntity();
 
         if (entity instanceof Player player && restricted(player)
-                && plugin.getConfig().getBoolean(
-                "settings.login.block-item-pickup",
-                plugin.getConfig().getBoolean(
-                        "settings.login.block-item-use", true))) {
+                && enabled("block-item-pickup", true)) {
             event.setCancelled(true);
         }
     }
@@ -309,8 +302,7 @@ public final class AuthListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDamage(EntityDamageEvent event) {
         if (event.getEntity() instanceof Player player
-                && restricted(player) && plugin.getConfig().getBoolean(
-                "settings.login.block-damage", true)) {
+                && restricted(player) && enabled("block-damage", true)) {
             event.setCancelled(true);
         }
     }
@@ -318,8 +310,7 @@ public final class AuthListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onFoodChange(FoodLevelChangeEvent event) {
         if (event.getEntity() instanceof Player player
-                && restricted(player) && plugin.getConfig().getBoolean(
-                "settings.login.block-hunger", true)) {
+                && restricted(player) && enabled("block-hunger", true)) {
             event.setCancelled(true);
         }
     }
@@ -332,6 +323,7 @@ public final class AuthListener implements Listener {
             Bukkit.getScheduler().runTask(plugin, () -> {
                 if (player.isOnline() && restricted(player)) {
                     applyRestrictions(player);
+                    teleportToLoginSpawn(player);
                 }
             });
         }
