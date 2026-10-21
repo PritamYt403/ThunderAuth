@@ -40,7 +40,7 @@ public final class FloodgateHook {
                     "Floodgate detected. Bedrock identity support enabled.");
         } else if (enabled) {
             plugin.getLogger().warning(
-                    "Floodgate is unavailable. Bedrock identity verification "
+                    "Floodgate unavailable. Bedrock identity verification "
                             + "cannot be performed.");
         }
     }
@@ -54,29 +54,35 @@ public final class FloodgateHook {
             return null;
         }
 
-        if (available) {
-            Boolean bedrock = checkFloodgatePlayer(player.getUniqueId());
+        if (!available) {
+            return "JAVA:" + player.getUniqueId();
+        }
 
-            if (bedrock == null) {
+        Boolean bedrock = checkFloodgatePlayer(player.getUniqueId());
+
+        // If Floodgate identity verification fails, fail closed.
+        if (bedrock == null) {
+            return null;
+        }
+
+        if (!bedrock) {
+            return "JAVA:" + player.getUniqueId();
+        }
+
+        String xuid = getXuid(player.getUniqueId());
+
+        if (xuid == null || xuid.isBlank()) {
+            if (plugin.getConfig().getBoolean(
+                    "settings.security.reject-unverified-bedrock-identity",
+                    true)) {
                 return null;
             }
 
-            if (bedrock) {
-                String xuid = getXuid(player.getUniqueId());
-
-                if (xuid != null && !xuid.isBlank()) {
-                    return "BEDROCK:" + xuid;
-                }
-
-                if (plugin.getConfig().getBoolean(
-                        "settings.security.reject-unverified-bedrock-identity",
-                        true)) {
-                    return null;
-                }
-            }
+            // Never classify a confirmed Bedrock player as a Java identity.
+            return null;
         }
 
-        return "JAVA:" + player.getUniqueId();
+        return "BEDROCK:" + xuid;
     }
 
     public boolean isFloodgatePlayer(UUID uuid) {
@@ -105,12 +111,8 @@ public final class FloodgateHook {
     }
 
     public String getXuid(UUID uuid) {
-        if (!available || uuid == null) {
-            return null;
-        }
-
-        Boolean bedrock = checkFloodgatePlayer(uuid);
-        if (!Boolean.TRUE.equals(bedrock)) {
+        if (!available || uuid == null
+                || !Boolean.TRUE.equals(checkFloodgatePlayer(uuid))) {
             return null;
         }
 
@@ -120,22 +122,25 @@ public final class FloodgateHook {
 
             Object api = apiClass.getMethod("getInstance").invoke(null);
 
-            Object player = apiClass.getMethod(
+            Object result = apiClass.getMethod(
                     "getPlayer", UUID.class).invoke(api, uuid);
 
-            if (player instanceof Optional<?> optional) {
-                player = optional.orElse(null);
+            if (result instanceof Optional<?> optional) {
+                result = optional.orElse(null);
             }
 
-            if (player == null) {
+            if (result == null) {
                 return null;
             }
 
-            Object xuid = player.getClass()
-                    .getMethod("getXuid")
-                    .invoke(player);
+            Method getXuid = result.getClass().getMethod("getXuid");
+            Object xuid = getXuid.invoke(result);
 
-            return xuid == null ? null : xuid.toString();
+            if (xuid == null || xuid.toString().isBlank()) {
+                return null;
+            }
+
+            return xuid.toString();
         } catch (ReflectiveOperationException | LinkageError exception) {
             logApiError("Could not read Floodgate XUID", exception);
             return null;
