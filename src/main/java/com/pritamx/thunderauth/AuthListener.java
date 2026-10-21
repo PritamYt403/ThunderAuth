@@ -1,8 +1,10 @@
+
 package com.pritamx.thunderauth;
 
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -11,36 +13,35 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
-import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryDragEvent;
-import org.bukkit.event.inventory.InventoryOpenEvent;
-import org.bukkit.event.player.PlayerItemConsumeEvent;
-import org.bukkit.event.player.PlayerPickupItemEvent;
-import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
 
 public final class AuthListener implements Listener {
 
     private final ThunderAuth plugin;
     private final AuthManager auth;
-    private final Map<UUID, GameMode> previousModes = new HashMap<>();
 
     public AuthListener(ThunderAuth plugin, AuthManager auth) {
         this.plugin = plugin;
         this.auth = auth;
+    }
+
+    private boolean restricted(Player player) {
+        return !auth.isAuthenticated(player);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -54,14 +55,22 @@ public final class AuthListener implements Listener {
 
             auth.beginAuthentication(player);
 
-            if (!auth.isAuthenticated(player)) {
+            if (restricted(player)) {
                 applyRestrictions(player);
 
-                String path = auth.hasAccount(player.getUniqueId())
-                        ? "authentication.login-required"
-                        : "authentication.register-required";
+                boolean registered = auth.hasAccount(player.getUniqueId());
 
-                player.sendMessage(plugin.message(path));
+                player.sendMessage(plugin.message(
+                        registered
+                                ? "authentication.login-required"
+                                : "authentication.register-required"));
+
+                if (plugin.getConfig().getBoolean(
+                        "settings.bossbar.enabled", true)) {
+                    plugin.getBossBarManager().start(player);
+                }
+
+                showAuthTitle(player, registered);
             }
         });
     }
@@ -70,12 +79,12 @@ public final class AuthListener implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
 
-        removeRestrictions(player);
+        player.removePotionEffect(PotionEffectType.BLINDNESS);
         auth.handleQuit(player);
-    }
 
-    private boolean restricted(Player player) {
-        return !auth.isAuthenticated(player);
+        if (plugin.getBossBarManager() != null) {
+            plugin.getBossBarManager().stop(player);
+        }
     }
 
     private void applyRestrictions(Player player) {
@@ -92,19 +101,42 @@ public final class AuthListener implements Listener {
                     0,
                     false,
                     false,
-                    false
-            ));
+                    false));
         }
     }
 
-    private void removeRestrictions(Player player) {
-        player.removePotionEffect(PotionEffectType.BLINDNESS);
-        previousModes.remove(player.getUniqueId());
+    private void showAuthTitle(Player player, boolean registered) {
+        if (!plugin.getConfig().getBoolean(
+                "settings.titles.enabled", true)) {
+            return;
+        }
+
+        String titlePath = registered
+                ? "titles.login-title"
+                : "titles.register-title";
+
+        String subtitlePath = registered
+                ? "titles.login-subtitle"
+                : "titles.register-subtitle";
+
+        int fadeIn = Math.max(0, plugin.getConfig().getInt(
+                "settings.titles.fade-in", 5));
+        int stay = Math.max(0, plugin.getConfig().getInt(
+                "settings.titles.stay", 40));
+        int fadeOut = Math.max(0, plugin.getConfig().getInt(
+                "settings.titles.fade-out", 10));
+
+        player.sendTitle(
+                plugin.messageWithoutPrefix(titlePath),
+                plugin.messageWithoutPrefix(subtitlePath),
+                fadeIn, stay, fadeOut);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent event) {
-        if (!restricted(event.getPlayer())
+        Player player = event.getPlayer();
+
+        if (!restricted(player)
                 || !plugin.getConfig().getBoolean(
                 "settings.login.block-movement", true)) {
             return;
@@ -113,7 +145,8 @@ public final class AuthListener implements Listener {
         Location from = event.getFrom();
         Location to = event.getTo();
 
-        if (to != null && (from.getBlockX() != to.getBlockX()
+        if (to != null && (
+                from.getBlockX() != to.getBlockX()
                 || from.getBlockY() != to.getBlockY()
                 || from.getBlockZ() != to.getBlockZ())) {
             event.setTo(from);
@@ -141,13 +174,13 @@ public final class AuthListener implements Listener {
             return;
         }
 
-        String commandLine = event.getMessage().toLowerCase().trim();
-        String root = commandLine.split("\\s+", 2)[0];
+        String root = event.getMessage()
+                .toLowerCase(java.util.Locale.ROOT)
+                .trim()
+                .split("\\s+", 2)[0];
 
-        if (root.equals("/login")
-                || root.equals("/register")
-                || root.equals("/l")
-                || root.equals("/reg")) {
+        if (root.equals("/login") || root.equals("/register")
+                || root.equals("/l") || root.equals("/reg")) {
             return;
         }
 
@@ -215,14 +248,18 @@ public final class AuthListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDrop(PlayerDropItemEvent event) {
-        if (restricted(event.getPlayer())) {
+        if (restricted(event.getPlayer())
+                && plugin.getConfig().getBoolean(
+                "settings.login.block-item-use", true)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSwap(PlayerSwapHandItemsEvent event) {
-        if (restricted(event.getPlayer())) {
+        if (restricted(event.getPlayer())
+                && plugin.getConfig().getBoolean(
+                "settings.login.block-item-use", true)) {
             event.setCancelled(true);
         }
     }
@@ -230,6 +267,17 @@ public final class AuthListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onConsume(PlayerItemConsumeEvent event) {
         if (restricted(event.getPlayer())
+                && plugin.getConfig().getBoolean(
+                "settings.login.block-item-use", true)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPickup(EntityPickupItemEvent event) {
+        Entity entity = event.getEntity();
+
+        if (entity instanceof Player player && restricted(player)
                 && plugin.getConfig().getBoolean(
                 "settings.login.block-item-use", true)) {
             event.setCancelled(true);
@@ -249,6 +297,19 @@ public final class AuthListener implements Listener {
         if (event.getEntity() instanceof Player player
                 && restricted(player)) {
             event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onWorldChange(PlayerChangedWorldEvent event) {
+        Player player = event.getPlayer();
+
+        if (restricted(player)) {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (player.isOnline() && restricted(player)) {
+                    applyRestrictions(player);
+                }
+            });
         }
     }
 }
