@@ -52,9 +52,12 @@ public final class AuthManager {
     public boolean register(Player player, String identity, String password) {
         UUID uuid = player.getUniqueId();
 
+        boolean oneAccountPerIdentity = plugin.getConfig().getBoolean(
+                "settings.security.one-account-per-identity", true);
+
         if (identity == null || identity.isBlank()
                 || accounts.hasAccount(uuid)
-                || accounts.hasIdentity(identity)) {
+                || (oneAccountPerIdentity && accounts.hasIdentity(identity))) {
             return false;
         }
 
@@ -81,19 +84,28 @@ public final class AuthManager {
         }
     }
 
-    public boolean login(Player player, String password) {
+    /**
+     * Verifies both the password and the identity bound to the account.
+     */
+    public boolean login(Player player, String password, String identity) {
         UUID uuid = player.getUniqueId();
+        String storedIdentity = accounts.getIdentity(uuid);
 
-        if (!accounts.hasAccount(uuid)
+        if (identity == null || identity.isBlank()
+                || storedIdentity == null
+                || !storedIdentity.equals(identity)
+                || !accounts.hasAccount(uuid)
                 || !accounts.verifyPassword(uuid, password)) {
+
             int attempts = failedAttempts.merge(uuid, 1, Integer::sum);
             int maxAttempts = Math.max(1, plugin.getConfig().getInt(
                     "settings.login.max-attempts", 5));
 
-            if (attempts >= maxAttempts) {
+            if (attempts >= maxAttempts && player.isOnline()) {
                 player.kickPlayer(plugin.messageWithoutPrefix(
                         "authentication.too-many-attempts"));
             }
+
             return false;
         }
 
@@ -188,15 +200,10 @@ public final class AuthManager {
                 System.currentTimeMillis() + minutes * 60_000L);
 
         cancelTasks(uuid);
-
-        // Fix: remove login blindness after successful authentication.
         player.removePotionEffect(PotionEffectType.BLINDNESS);
-
-        // Restore normal movement speeds.
         player.setWalkSpeed(0.2F);
         player.setFlySpeed(0.1F);
 
-        // Stop authentication BossBar, if available.
         if (plugin.getBossBarManager() != null) {
             plugin.getBossBarManager().stop(player);
         }
