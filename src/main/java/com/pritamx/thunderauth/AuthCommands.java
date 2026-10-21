@@ -2,6 +2,8 @@
 package com.pritamx.thunderauth;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -42,14 +44,13 @@ public final class AuthCommands implements CommandExecutor {
                 return handlePasswordChange(sender, args);
             case "thunderauth":
                 return handleAdmin(sender, args);
+            case "setlogspawn":
+                return handleSetSpawn(sender, true);
+            case "setregspawn":
+                return handleSetSpawn(sender, false);
             default:
                 return false;
         }
-    }
-
-    private String getPlayerIdentity(Player player) {
-        FloodgateHook hook = plugin.getFloodgateHook();
-        return hook == null ? null : hook.getIdentity(player);
     }
 
     private boolean handleRegister(CommandSender sender, String[] args) {
@@ -101,13 +102,7 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        String identity = getPlayerIdentity(player);
-
-        if (identity == null || identity.isBlank()) {
-            player.sendMessage(plugin.message(
-                    "authentication.identity-unavailable"));
-            return true;
-        }
+        String identity = "JAVA:" + player.getUniqueId();
 
         if (auth.register(player, identity, args[0])) {
             player.sendMessage(plugin.message(
@@ -122,6 +117,8 @@ public final class AuthCommands implements CommandExecutor {
             Bukkit.broadcastMessage(plugin.messageWithoutPrefix(
                     "announcements.registered")
                     .replace("%player%", player.getName()));
+
+            teleportToConfiguredSpawn(player, true);
         } else {
             player.sendMessage(plugin.message(
                     "authentication.already-registered"));
@@ -154,24 +151,7 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        String identity = getPlayerIdentity(player);
-
-        if (identity == null || identity.isBlank()) {
-            player.sendMessage(plugin.message(
-                    "authentication.identity-unavailable"));
-            return true;
-        }
-
-        String storedIdentity = accounts.getIdentity(
-                player.getUniqueId());
-
-        if (storedIdentity == null || !storedIdentity.equals(identity)) {
-            player.sendMessage(plugin.message(
-                    "authentication.identity-mismatch"));
-            return true;
-        }
-
-        if (auth.login(player, args[0], identity)) {
+        if (auth.login(player, args[0])) {
             player.sendMessage(plugin.message(
                     "authentication.login-success"));
 
@@ -184,6 +164,8 @@ public final class AuthCommands implements CommandExecutor {
             Bukkit.broadcastMessage(plugin.messageWithoutPrefix(
                     "announcements.logged-in")
                     .replace("%player%", player.getName()));
+
+            teleportToConfiguredSpawn(player, false);
         } else if (player.isOnline()) {
             player.sendMessage(plugin.message(
                     "authentication.wrong-password"));
@@ -192,16 +174,81 @@ public final class AuthCommands implements CommandExecutor {
         return true;
     }
 
+    private boolean handleSetSpawn(CommandSender sender, boolean loginSpawn) {
+        if (!sender.hasPermission("thunderauth.admin")) {
+            sender.sendMessage(plugin.message("commands.no-permission"));
+            return true;
+        }
+
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(plugin.message("commands.player-only"));
+            return true;
+        }
+
+        Location location = player.getLocation();
+        String path = loginSpawn
+                ? "settings.spawn.normal-"
+                : "settings.spawn.first-registration-";
+
+        plugin.getConfig().set(path + "world", location.getWorld().getName());
+        plugin.getConfig().set(path + "x", location.getX());
+        plugin.getConfig().set(path + "y", location.getY());
+        plugin.getConfig().set(path + "z", location.getZ());
+
+        if (!loginSpawn) {
+            plugin.getConfig().set(
+                    "settings.spawn.first-registration-enabled", true);
+        }
+
+        plugin.saveConfig();
+
+        player.sendMessage(plugin.color(
+                "&a" + (loginSpawn
+                        ? "Login spawn location saved!"
+                        : "Registration spawn location saved!")));
+        return true;
+    }
+
+    private void teleportToConfiguredSpawn(
+            Player player,
+            boolean firstRegistration
+    ) {
+        if (firstRegistration && !plugin.getConfig().getBoolean(
+                "settings.spawn.first-registration-enabled", true)) {
+            return;
+        }
+
+        String base = firstRegistration
+                ? "settings.spawn.first-registration-"
+                : "settings.spawn.normal-";
+
+        String worldName = plugin.getConfig().getString(base + "world", "world");
+        World world = Bukkit.getWorld(worldName);
+
+        if (world == null) {
+            plugin.getLogger().warning(
+                    "Spawn world '" + worldName + "' was not found.");
+            return;
+        }
+
+        double x = plugin.getConfig().getDouble(base + "x", 0.5);
+        double y = plugin.getConfig().getDouble(base + "y", 65.0);
+        double z = plugin.getConfig().getDouble(base + "z", 0.5);
+
+        player.teleport(new Location(world, x, y, z));
+    }
+
     private boolean handlePasswordChange(
-            CommandSender sender, String[] args) {
+            CommandSender sender,
+            String[] args
+    ) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(plugin.message("commands.player-only"));
             return true;
         }
 
         if (args.length != 2) {
-            player.sendMessage(plugin.messageWithoutPrefix(
-                    "password.usage"));
+            player.sendMessage(plugin.messageWithoutPrefix("password.usage"));
             return true;
         }
 
@@ -244,8 +291,7 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        if (args.length != 1
-                || !args[0].equalsIgnoreCase("reload")) {
+        if (args.length != 1 || !args[0].equalsIgnoreCase("reload")) {
             sender.sendMessage(plugin.messageWithoutPrefix(
                     "commands.reload-usage"));
             return true;
