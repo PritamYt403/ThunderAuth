@@ -4,15 +4,14 @@ package com.pritamx.thunderauth;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
 import java.io.File;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.UUID;
-
-import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.PBEKeySpec;
 
 public final class AccountStore {
 
@@ -28,7 +27,8 @@ public final class AccountStore {
 
     public AccountStore(ThunderAuth plugin) {
         this.plugin = plugin;
-        this.accountsFile = new File(plugin.getDataFolder(), "accounts.yml");
+        this.accountsFile = new File(
+                plugin.getDataFolder(), "accounts.yml");
         load();
     }
 
@@ -155,9 +155,11 @@ public final class AccountStore {
         byte[] salt = new byte[SALT_LENGTH];
         secureRandom.nextBytes(salt);
 
+        String newHash = hashPassword(newPassword, salt);
+
         data.set(path + ".salt",
                 Base64.getEncoder().encodeToString(salt));
-        data.set(path + ".hash", hashPassword(newPassword, salt));
+        data.set(path + ".hash", newHash);
 
         try {
             save();
