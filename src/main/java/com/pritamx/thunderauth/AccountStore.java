@@ -1,3 +1,4 @@
+
 package com.pritamx.thunderauth;
 
 import org.bukkit.configuration.ConfigurationSection;
@@ -7,9 +8,9 @@ import java.io.File;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.security.spec.KeySpec;
 import java.util.Base64;
 import java.util.UUID;
+
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 
@@ -35,8 +36,7 @@ public final class AccountStore {
         if (!plugin.getDataFolder().exists()
                 && !plugin.getDataFolder().mkdirs()) {
             throw new IllegalStateException(
-                    "Could not create ThunderAuth data folder."
-            );
+                    "Could not create ThunderAuth data folder.");
         }
 
         data = YamlConfiguration.loadConfiguration(accountsFile);
@@ -47,7 +47,7 @@ public final class AccountStore {
     }
 
     public synchronized boolean hasAccount(UUID uuid) {
-        return data.contains("accounts." + uuid);
+        return uuid != null && data.contains("accounts." + uuid);
     }
 
     public synchronized boolean hasIdentity(String identity) {
@@ -55,18 +55,18 @@ public final class AccountStore {
             return false;
         }
 
-        ConfigurationSection accounts = data.getConfigurationSection("accounts");
+        ConfigurationSection section =
+                data.getConfigurationSection("accounts");
 
-        if (accounts == null) {
+        if (section == null) {
             return false;
         }
 
-        for (String accountId : accounts.getKeys(false)) {
-            String storedIdentity = data.getString(
-                    "accounts." + accountId + ".identity"
-            );
+        for (String accountId : section.getKeys(false)) {
+            String stored = data.getString(
+                    "accounts." + accountId + ".identity");
 
-            if (identity.equals(storedIdentity)) {
+            if (identity.equals(stored)) {
                 return true;
             }
         }
@@ -79,9 +79,15 @@ public final class AccountStore {
             String identity,
             String password
     ) throws IOException {
-        if (uuid == null || identity == null || identity.isBlank()
-                || password == null || hasAccount(uuid)
-                || hasIdentity(identity)) {
+        boolean uniqueIdentityRequired = plugin.getConfig().getBoolean(
+                "settings.security.one-account-per-identity", true);
+
+        if (uuid == null
+                || identity == null
+                || identity.isBlank()
+                || password == null
+                || hasAccount(uuid)
+                || (uniqueIdentityRequired && hasIdentity(identity))) {
             return false;
         }
 
@@ -92,7 +98,8 @@ public final class AccountStore {
         String hash = hashPassword(password, salt);
 
         data.set(path + ".identity", identity);
-        data.set(path + ".salt", Base64.getEncoder().encodeToString(salt));
+        data.set(path + ".salt",
+                Base64.getEncoder().encodeToString(salt));
         data.set(path + ".hash", hash);
         data.set(path + ".created-at", System.currentTimeMillis());
 
@@ -125,8 +132,7 @@ public final class AccountStore {
             byte[] salt = Base64.getDecoder().decode(encodedSalt);
             byte[] expected = Base64.getDecoder().decode(expectedHash);
             byte[] actual = Base64.getDecoder().decode(
-                    hashPassword(password, salt)
-            );
+                    hashPassword(password, salt));
 
             return MessageDigest.isEqual(expected, actual);
         } catch (IllegalArgumentException exception) {
@@ -143,6 +149,9 @@ public final class AccountStore {
         }
 
         String path = "accounts." + uuid;
+        String oldSalt = data.getString(path + ".salt");
+        String oldHash = data.getString(path + ".hash");
+
         byte[] salt = new byte[SALT_LENGTH];
         secureRandom.nextBytes(salt);
 
@@ -150,8 +159,14 @@ public final class AccountStore {
                 Base64.getEncoder().encodeToString(salt));
         data.set(path + ".hash", hashPassword(newPassword, salt));
 
-        save();
-        return true;
+        try {
+            save();
+            return true;
+        } catch (IOException exception) {
+            data.set(path + ".salt", oldSalt);
+            data.set(path + ".hash", oldHash);
+            throw exception;
+        }
     }
 
     public synchronized String getIdentity(UUID uuid) {
@@ -167,23 +182,19 @@ public final class AccountStore {
                 password.toCharArray(),
                 salt,
                 HASH_ITERATIONS,
-                HASH_BITS
-        );
+                HASH_BITS);
 
         try {
-            SecretKeyFactory factory =
-                    SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+            SecretKeyFactory factory = SecretKeyFactory.getInstance(
+                    "PBKDF2WithHmacSHA256");
 
             return Base64.getEncoder().encodeToString(
-                    factory.generateSecret(spec).getEncoded()
-            );
+                    factory.generateSecret(spec).getEncoded());
         } catch (Exception exception) {
             throw new IllegalStateException(
-                    "Secure password hashing is unavailable.",
-                    exception
-            );
+                    "Secure password hashing is unavailable.", exception);
         } finally {
             spec.clearPassword();
         }
     }
-      }
+}
