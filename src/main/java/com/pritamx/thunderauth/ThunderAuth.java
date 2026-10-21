@@ -5,9 +5,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.plugin.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.logging.Level;
 
 public final class ThunderAuth extends JavaPlugin {
@@ -58,6 +60,7 @@ public final class ThunderAuth extends JavaPlugin {
                     Level.SEVERE,
                     "ThunderAuth failed to initialize.",
                     exception);
+
             getServer().getPluginManager().disablePlugin(this);
         }
     }
@@ -66,6 +69,10 @@ public final class ThunderAuth extends JavaPlugin {
     public void onDisable() {
         if (bossBarManager != null) {
             bossBarManager.stopAll();
+        }
+
+        if (authManager != null) {
+            authManager.cleanupAll();
         }
 
         getLogger().info("ThunderAuth has been disabled.");
@@ -84,7 +91,7 @@ public final class ThunderAuth extends JavaPlugin {
         boolean success = true;
 
         for (String name : commands) {
-            org.bukkit.command.PluginCommand command = getCommand(name);
+            PluginCommand command = getCommand(name);
 
             if (command == null) {
                 getLogger().severe(
@@ -164,7 +171,10 @@ public final class ThunderAuth extends JavaPlugin {
             return;
         }
 
-        messages = YamlConfiguration.loadConfiguration(messagesFile);
+        FileConfiguration reloadedMessages =
+                YamlConfiguration.loadConfiguration(messagesFile);
+
+        messages = reloadedMessages;
 
         if (floodgateHook != null) {
             floodgateHook.refresh();
