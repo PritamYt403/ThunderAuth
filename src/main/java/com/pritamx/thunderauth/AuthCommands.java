@@ -151,7 +151,9 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        if (auth.login(player, args[0])) {
+        String identity = "JAVA:" + player.getUniqueId();
+
+        if (auth.login(player, args[0], identity)) {
             player.sendMessage(plugin.message(
                     "authentication.login-success"));
 
@@ -174,7 +176,10 @@ public final class AuthCommands implements CommandExecutor {
         return true;
     }
 
-    private boolean handleSetSpawn(CommandSender sender, boolean loginSpawn) {
+    private boolean handleSetSpawn(
+            CommandSender sender,
+            boolean loginSpawn
+    ) {
         if (!sender.hasPermission("thunderauth.admin")) {
             sender.sendMessage(plugin.message("commands.no-permission"));
             return true;
@@ -186,14 +191,22 @@ public final class AuthCommands implements CommandExecutor {
         }
 
         Location location = player.getLocation();
-        String path = loginSpawn
+        World world = location.getWorld();
+
+        if (world == null) {
+            player.sendMessage(plugin.color(
+                    "&cCould not determine your current world."));
+            return true;
+        }
+
+        String base = loginSpawn
                 ? "settings.spawn.normal-"
                 : "settings.spawn.first-registration-";
 
-        plugin.getConfig().set(path + "world", location.getWorld().getName());
-        plugin.getConfig().set(path + "x", location.getX());
-        plugin.getConfig().set(path + "y", location.getY());
-        plugin.getConfig().set(path + "z", location.getZ());
+        plugin.getConfig().set(base + "world", world.getName());
+        plugin.getConfig().set(base + "x", location.getX());
+        plugin.getConfig().set(base + "y", location.getY());
+        plugin.getConfig().set(base + "z", location.getZ());
 
         if (!loginSpawn) {
             plugin.getConfig().set(
@@ -206,6 +219,7 @@ public final class AuthCommands implements CommandExecutor {
                 "&a" + (loginSpawn
                         ? "Login spawn location saved!"
                         : "Registration spawn location saved!")));
+
         return true;
     }
 
@@ -222,7 +236,9 @@ public final class AuthCommands implements CommandExecutor {
                 ? "settings.spawn.first-registration-"
                 : "settings.spawn.normal-";
 
-        String worldName = plugin.getConfig().getString(base + "world", "world");
+        String worldName = plugin.getConfig().getString(
+                base + "world", "world");
+
         World world = Bukkit.getWorld(worldName);
 
         if (world == null) {
@@ -235,7 +251,11 @@ public final class AuthCommands implements CommandExecutor {
         double y = plugin.getConfig().getDouble(base + "y", 65.0);
         double z = plugin.getConfig().getDouble(base + "z", 0.5);
 
-        player.teleport(new Location(world, x, y, z));
+        float yaw = player.getLocation().getYaw();
+        float pitch = player.getLocation().getPitch();
+
+        Location spawn = new Location(world, x, y, z, yaw, pitch);
+        player.teleport(spawn);
     }
 
     private boolean handlePasswordChange(
@@ -248,7 +268,8 @@ public final class AuthCommands implements CommandExecutor {
         }
 
         if (args.length != 2) {
-            player.sendMessage(plugin.messageWithoutPrefix("password.usage"));
+            player.sendMessage(plugin.messageWithoutPrefix(
+                    "password.usage"));
             return true;
         }
 
@@ -291,7 +312,8 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        if (args.length != 1 || !args[0].equalsIgnoreCase("reload")) {
+        if (args.length != 1
+                || !args[0].equalsIgnoreCase("reload")) {
             sender.sendMessage(plugin.messageWithoutPrefix(
                     "commands.reload-usage"));
             return true;
