@@ -21,8 +21,7 @@ public final class AuthCommands implements CommandExecutor {
     public AuthCommands(
             ThunderAuth plugin,
             AccountStore accounts,
-            AuthManager auth
-    ) {
+            AuthManager auth) {
         this.plugin = plugin;
         this.accounts = accounts;
         this.auth = auth;
@@ -33,9 +32,9 @@ public final class AuthCommands implements CommandExecutor {
             CommandSender sender,
             Command command,
             String label,
-            String[] args
-    ) {
-        switch (command.getName().toLowerCase()) {
+            String[] args) {
+
+        switch (command.getName().toLowerCase(java.util.Locale.ROOT)) {
             case "register":
                 return handleRegister(sender, args);
             case "login":
@@ -117,7 +116,9 @@ public final class AuthCommands implements CommandExecutor {
 
         if (!auth.register(player, identity, args[0])) {
             player.sendMessage(plugin.message(
-                    "authentication.already-registered"));
+                    accounts.hasIdentity(identity)
+                            ? "authentication.already-registered"
+                            : "authentication.identity-unavailable"));
             return true;
         }
 
@@ -134,7 +135,7 @@ public final class AuthCommands implements CommandExecutor {
                 "announcements.registered")
                 .replace("%player%", player.getName()));
 
-        // Registration always finishes at the main login spawn.
+        // New accounts finish registration at the configured main spawn.
         auth.clearReturnLocation(player.getUniqueId());
         teleportToLoginSpawn(player);
 
@@ -203,7 +204,7 @@ public final class AuthCommands implements CommandExecutor {
                 "announcements.logged-in")
                 .replace("%player%", player.getName()));
 
-        // Restore the location saved before teleporting to login spawn.
+        // AuthManager.login() authenticates but does not restore this location.
         if (!auth.restoreReturnLocation(player)) {
             plugin.getLogger().warning(
                     "No saved return location for " + player.getUniqueId());
@@ -213,9 +214,8 @@ public final class AuthCommands implements CommandExecutor {
     }
 
     private boolean handleSetSpawn(
-            CommandSender sender,
-            boolean loginSpawn
-    ) {
+            CommandSender sender, boolean loginSpawn) {
+
         if (!sender.hasPermission("thunderauth.admin")) {
             sender.sendMessage(plugin.message("commands.no-permission"));
             return true;
@@ -230,8 +230,7 @@ public final class AuthCommands implements CommandExecutor {
         World world = location.getWorld();
 
         if (world == null) {
-            player.sendMessage(plugin.color(
-                    "&cCould not determine your current world."));
+            player.sendMessage(plugin.message("spawn.world-not-found"));
             return true;
         }
 
@@ -253,10 +252,8 @@ public final class AuthCommands implements CommandExecutor {
 
         plugin.saveConfig();
 
-        player.sendMessage(plugin.color(
-                loginSpawn
-                        ? "&aLogin spawn location saved!"
-                        : "&aRegistration spawn location saved!"));
+        player.sendMessage(plugin.messageWithoutPrefix(
+                loginSpawn ? "spawn.login-set" : "spawn.register-set"));
 
         return true;
     }
@@ -271,8 +268,7 @@ public final class AuthCommands implements CommandExecutor {
         if (world == null) {
             plugin.getLogger().warning(
                     "Login spawn world '" + worldName + "' was not found.");
-            player.sendMessage(plugin.color(
-                    "&cLogin spawn world was not found."));
+            player.sendMessage(plugin.message("spawn.world-not-found"));
             return;
         }
 
@@ -285,21 +281,21 @@ public final class AuthCommands implements CommandExecutor {
                 (float) plugin.getConfig().getDouble(base + "pitch", 0.0)
         );
 
-        player.teleport(spawn);
+        if (!player.teleport(spawn)) {
+            player.sendMessage(plugin.message("spawn.teleport-failed"));
+        }
     }
 
     private boolean handlePasswordChange(
-            CommandSender sender,
-            String[] args
-    ) {
+            CommandSender sender, String[] args) {
+
         if (!(sender instanceof Player player)) {
             sender.sendMessage(plugin.message("commands.player-only"));
             return true;
         }
 
         if (args.length != 2) {
-            player.sendMessage(plugin.messageWithoutPrefix(
-                    "password.usage"));
+            player.sendMessage(plugin.messageWithoutPrefix("password.usage"));
             return true;
         }
 
@@ -342,8 +338,7 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        if (args.length != 1
-                || !args[0].equalsIgnoreCase("reload")) {
+        if (args.length != 1 || !args[0].equalsIgnoreCase("reload")) {
             sender.sendMessage(plugin.messageWithoutPrefix(
                     "commands.reload-usage"));
             return true;
