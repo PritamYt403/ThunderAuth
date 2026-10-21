@@ -2,6 +2,7 @@
 package com.pritamx.thunderauth;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
@@ -21,6 +22,9 @@ public final class AuthManager {
     private final Map<UUID, Long> sessionExpiry = new HashMap<>();
     private final Map<UUID, BukkitTask> timeoutTasks = new HashMap<>();
     private final Map<UUID, BukkitTask> reminderTasks = new HashMap<>();
+
+    // Location where the player was before authentication.
+    private final Map<UUID, Location> returnLocations = new HashMap<>();
 
     public AuthManager(ThunderAuth plugin, AccountStore accounts) {
         this.plugin = plugin;
@@ -54,6 +58,50 @@ public final class AuthManager {
         return hook == null ? null : hook.getIdentity(player);
     }
 
+    /**
+     * Save the player's location before moving them to the login spawn.
+     * Call this from the join listener before any authentication teleport.
+     */
+    public void saveReturnLocation(Player player) {
+        if (player == null || !player.isOnline()) {
+            return;
+        }
+
+        Location location = player.getLocation();
+
+        if (location.getWorld() != null) {
+            returnLocations.put(
+                    player.getUniqueId(),
+                    location.clone()
+            );
+        }
+    }
+
+    /**
+     * Restore the location saved before authentication.
+     * Returns false if no saved location is available.
+     */
+    public boolean restoreReturnLocation(Player player) {
+        if (player == null || !player.isOnline()) {
+            return false;
+        }
+
+        Location location = returnLocations.remove(player.getUniqueId());
+
+        if (location == null || location.getWorld() == null) {
+            return false;
+        }
+
+        return player.teleport(location);
+    }
+
+    /**
+     * Discard a saved location without teleporting.
+     */
+    public void clearReturnLocation(UUID uuid) {
+        returnLocations.remove(uuid);
+    }
+
     public boolean register(Player player, String identity, String password) {
         UUID uuid = player.getUniqueId();
 
@@ -67,12 +115,15 @@ public final class AuthManager {
         }
 
         String currentIdentity = getIdentity(player);
+
         if (currentIdentity == null || !currentIdentity.equals(identity)) {
             return false;
         }
 
-        int min = plugin.getConfig().getInt("settings.password.min-length", 6);
-        int max = plugin.getConfig().getInt("settings.password.max-length", 64);
+        int min = plugin.getConfig().getInt(
+                "settings.password.min-length", 6);
+        int max = plugin.getConfig().getInt(
+                "settings.password.max-length", 64);
 
         if (password == null || password.length() < min
                 || password.length() > max) {
@@ -133,8 +184,10 @@ public final class AuthManager {
             return false;
         }
 
-        int min = plugin.getConfig().getInt("settings.password.min-length", 6);
-        int max = plugin.getConfig().getInt("settings.password.max-length", 64);
+        int min = plugin.getConfig().getInt(
+                "settings.password.min-length", 6);
+        int max = plugin.getConfig().getInt(
+                "settings.password.max-length", 64);
 
         if (newPassword == null || newPassword.length() < min
                 || newPassword.length() > max) {
@@ -154,8 +207,6 @@ public final class AuthManager {
     public void beginAuthentication(Player player) {
         UUID uuid = player.getUniqueId();
 
-        // A remembered session is accepted only if the current identity
-        // matches the identity stored for this account.
         if (isSessionValid(uuid) && accounts.hasAccount(uuid)) {
             String currentIdentity = getIdentity(player);
             String storedIdentity = accounts.getIdentity(uuid);
@@ -180,10 +231,12 @@ public final class AuthManager {
                 plugin, () -> {
                     if (!isAuthenticated(uuid)) {
                         Player online = Bukkit.getPlayer(uuid);
+
                         if (online != null) {
                             online.kickPlayer(plugin.messageWithoutPrefix(
                                     "authentication.timeout"));
                         }
+
                         cleanup(uuid);
                     }
                 }, timeout * 20L));
@@ -244,6 +297,8 @@ public final class AuthManager {
             sessionExpiry.remove(uuid);
         }
 
+        // Don't retain a stale location after the player disconnects.
+        returnLocations.remove(uuid);
         cleanup(uuid);
     }
 
@@ -255,14 +310,17 @@ public final class AuthManager {
 
     private void cancelTasks(UUID uuid) {
         BukkitTask timeout = timeoutTasks.remove(uuid);
+
         if (timeout != null) {
             timeout.cancel();
         }
+
         cancelReminder(uuid);
     }
 
     private void cancelReminder(UUID uuid) {
         BukkitTask reminder = reminderTasks.remove(uuid);
+
         if (reminder != null) {
             reminder.cancel();
         }
