@@ -29,6 +29,16 @@ commands:
     usage: "/thunderauth reload"
     permission: thunderauth.admin
 
+  setlogspawn:
+    description: Set login spawn location
+    usage: "/setlogspawn"
+    permission: thunderauth.admin
+
+  setregspawn:
+    description: Set registration spawn location
+    usage: "/setregspawn"
+    permission: thunderauth.admin
+
 permissions:
   thunderauth.login:
     description: Allows players to login
@@ -43,5 +53,5 @@ permissions:
     default: true
 
   thunderauth.admin:
-    description: Allows administrators to reload ThunderAuth
+    description: Allows administrators to manage ThunderAuth
     default: op
