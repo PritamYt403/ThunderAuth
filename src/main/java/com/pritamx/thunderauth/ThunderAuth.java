@@ -8,6 +8,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.logging.Level;
 
 public final class ThunderAuth extends JavaPlugin {
@@ -68,6 +69,10 @@ public final class ThunderAuth extends JavaPlugin {
             bossBarManager.stopAll();
         }
 
+        if (authManager != null) {
+            authManager.cleanup();
+        }
+
         getLogger().info("ThunderAuth has been disabled.");
     }
 
@@ -84,7 +89,7 @@ public final class ThunderAuth extends JavaPlugin {
         boolean success = true;
 
         for (String name : commands) {
-            var command = getCommand(name);
+            org.bukkit.command.PluginCommand command = getCommand(name);
 
             if (command == null) {
                 getLogger().severe(
@@ -123,6 +128,16 @@ public final class ThunderAuth extends JavaPlugin {
         }
 
         messages = YamlConfiguration.loadConfiguration(messagesFile);
+
+        try {
+            messages.save(messagesFile);
+        } catch (IOException exception) {
+            getLogger().log(
+                    Level.WARNING,
+                    "Could not validate/save messages.yml.",
+                    exception);
+        }
+
         return true;
     }
 
@@ -160,11 +175,16 @@ public final class ThunderAuth extends JavaPlugin {
 
         if (messagesFile == null || !messagesFile.isFile()) {
             getLogger().warning(
-                    "messages.yml is missing; cannot reload messages.");
-            return;
-        }
+                    "messages.yml is missing; attempting to recreate it.");
 
-        messages = YamlConfiguration.loadConfiguration(messagesFile);
+            if (!loadMessages()) {
+                getLogger().severe(
+                        "Could not reload messages.yml.");
+                return;
+            }
+        } else {
+            messages = YamlConfiguration.loadConfiguration(messagesFile);
+        }
 
         if (floodgateHook != null) {
             floodgateHook.refresh();
