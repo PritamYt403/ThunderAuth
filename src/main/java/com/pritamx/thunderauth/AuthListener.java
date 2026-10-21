@@ -27,6 +27,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 
@@ -53,12 +54,11 @@ public final class AuthListener implements Listener {
                 return;
             }
 
-            // Save where the player joined before moving them.
             auth.saveReturnLocation(player);
             auth.beginAuthentication(player);
 
-            // A valid remembered session does not need a login teleport.
             if (!restricted(player)) {
+                auth.clearReturnLocation(player.getUniqueId());
                 return;
             }
 
@@ -72,7 +72,8 @@ public final class AuthListener implements Listener {
                             ? "authentication.login-required"
                             : "authentication.register-required"));
 
-            if (plugin.getConfig().getBoolean(
+            if (plugin.getBossBarManager() != null
+                    && plugin.getConfig().getBoolean(
                     "settings.bossbar.enabled", true)) {
                 plugin.getBossBarManager().start(player);
             }
@@ -91,6 +92,7 @@ public final class AuthListener implements Listener {
         if (world == null) {
             plugin.getLogger().warning(
                     "Login spawn world '" + worldName + "' was not found.");
+            player.sendMessage(plugin.message("spawn.world-not-found"));
             return;
         }
 
@@ -103,7 +105,9 @@ public final class AuthListener implements Listener {
                 (float) plugin.getConfig().getDouble(base + "pitch", 0.0)
         );
 
-        player.teleport(spawn);
+        if (!player.teleport(spawn)) {
+            player.sendMessage(plugin.message("spawn.teleport-failed"));
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -157,6 +161,10 @@ public final class AuthListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent event) {
+        if (event instanceof PlayerTeleportEvent) {
+            return;
+        }
+
         Player player = event.getPlayer();
 
         if (!restricted(player) || !plugin.getConfig().getBoolean(
