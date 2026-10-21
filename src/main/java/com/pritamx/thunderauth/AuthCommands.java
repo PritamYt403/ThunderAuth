@@ -1,3 +1,4 @@
+
 package com.pritamx.thunderauth;
 
 import org.bukkit.Bukkit;
@@ -5,6 +6,9 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 public final class AuthCommands implements CommandExecutor {
 
@@ -29,24 +33,23 @@ public final class AuthCommands implements CommandExecutor {
             String label,
             String[] args
     ) {
-        String name = command.getName().toLowerCase();
-
-        switch (name) {
+        switch (command.getName().toLowerCase()) {
             case "register":
                 return handleRegister(sender, args);
-
             case "login":
                 return handleLogin(sender, args);
-
             case "changepassword":
                 return handlePasswordChange(sender, args);
-
             case "thunderauth":
                 return handleAdmin(sender, args);
-
             default:
                 return false;
         }
+    }
+
+    private String getPlayerIdentity(Player player) {
+        FloodgateHook hook = plugin.getFloodgateHook();
+        return hook == null ? null : hook.getIdentity(player);
     }
 
     private boolean handleRegister(CommandSender sender, String[] args) {
@@ -73,16 +76,18 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        if (!java.security.MessageDigest.isEqual(
-                args[0].getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                args[1].getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+        if (!MessageDigest.isEqual(
+                args[0].getBytes(StandardCharsets.UTF_8),
+                args[1].getBytes(StandardCharsets.UTF_8))) {
             player.sendMessage(plugin.message(
                     "authentication.password-mismatch"));
             return true;
         }
 
-        int min = plugin.getConfig().getInt("settings.password.min-length", 6);
-        int max = plugin.getConfig().getInt("settings.password.max-length", 64);
+        int min = plugin.getConfig().getInt(
+                "settings.password.min-length", 6);
+        int max = plugin.getConfig().getInt(
+                "settings.password.max-length", 64);
 
         if (args[0].length() < min) {
             player.sendMessage(plugin.message(
@@ -96,8 +101,13 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        // Initial implementation uses the Java UUID as the account identity.
-        String identity = "JAVA:" + player.getUniqueId();
+        String identity = getPlayerIdentity(player);
+
+        if (identity == null || identity.isBlank()) {
+            player.sendMessage(plugin.message(
+                    "authentication.identity-unavailable"));
+            return true;
+        }
 
         if (auth.register(player, identity, args[0])) {
             player.sendMessage(plugin.message(
@@ -144,7 +154,24 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        if (auth.login(player, args[0])) {
+        String identity = getPlayerIdentity(player);
+
+        if (identity == null || identity.isBlank()) {
+            player.sendMessage(plugin.message(
+                    "authentication.identity-unavailable"));
+            return true;
+        }
+
+        String storedIdentity = accounts.getIdentity(
+                player.getUniqueId());
+
+        if (storedIdentity == null || !storedIdentity.equals(identity)) {
+            player.sendMessage(plugin.message(
+                    "authentication.identity-mismatch"));
+            return true;
+        }
+
+        if (auth.login(player, args[0], identity)) {
             player.sendMessage(plugin.message(
                     "authentication.login-success"));
 
@@ -166,9 +193,7 @@ public final class AuthCommands implements CommandExecutor {
     }
 
     private boolean handlePasswordChange(
-            CommandSender sender,
-            String[] args
-    ) {
+            CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(plugin.message("commands.player-only"));
             return true;
@@ -186,8 +211,10 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        int min = plugin.getConfig().getInt("settings.password.min-length", 6);
-        int max = plugin.getConfig().getInt("settings.password.max-length", 64);
+        int min = plugin.getConfig().getInt(
+                "settings.password.min-length", 6);
+        int max = plugin.getConfig().getInt(
+                "settings.password.max-length", 64);
 
         if (args[1].length() < min) {
             player.sendMessage(plugin.message(
@@ -217,7 +244,8 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        if (args.length != 1 || !args[0].equalsIgnoreCase("reload")) {
+        if (args.length != 1
+                || !args[0].equalsIgnoreCase("reload")) {
             sender.sendMessage(plugin.messageWithoutPrefix(
                     "commands.reload-usage"));
             return true;
