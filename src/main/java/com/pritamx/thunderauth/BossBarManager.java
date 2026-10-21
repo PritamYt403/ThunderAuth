@@ -1,3 +1,4 @@
+
 package com.pritamx.thunderauth;
 
 import org.bukkit.Bukkit;
@@ -26,29 +27,29 @@ public final class BossBarManager {
     }
 
     public void start(Player player) {
+        if (player == null || !player.isOnline()) {
+            return;
+        }
+
+        UUID uuid = player.getUniqueId();
+        stop(uuid);
+
         if (!plugin.getConfig().getBoolean(
                 "settings.bossbar.enabled", true)) {
             return;
         }
 
-        stop(player);
-
-        UUID uuid = player.getUniqueId();
         int timeout = Math.max(1, plugin.getConfig().getInt(
                 "settings.login.timeout-seconds", 60));
 
-        BarColor color = parseColor(
-                plugin.getConfig().getString("settings.bossbar.color", "RED")
-        );
-        BarStyle style = parseStyle(
-                plugin.getConfig().getString("settings.bossbar.style", "SOLID")
-        );
+        BarColor color = parseColor(plugin.getConfig().getString(
+                "settings.bossbar.color", "RED"));
+
+        BarStyle style = parseStyle(plugin.getConfig().getString(
+                "settings.bossbar.style", "SOLID"));
 
         BossBar bar = Bukkit.createBossBar(
-                getText(player, timeout),
-                color,
-                style
-        );
+                getText(player, timeout), color, style);
 
         bar.setProgress(1.0);
         bar.addPlayer(player);
@@ -61,12 +62,15 @@ public final class BossBarManager {
                 () -> {
                     Player online = Bukkit.getPlayer(uuid);
 
-                    if (online == null || auth.isAuthenticated(uuid)) {
+                    if (online == null
+                            || !online.isOnline()
+                            || auth.isAuthenticated(uuid)) {
                         stop(uuid);
                         return;
                     }
 
-                    int remaining = remainingSeconds.getOrDefault(uuid, 0) - 1;
+                    int remaining = remainingSeconds.getOrDefault(
+                            uuid, 0) - 1;
 
                     if (remaining <= 0) {
                         stop(uuid);
@@ -80,8 +84,8 @@ public final class BossBarManager {
                             "settings.bossbar.countdown", true)) {
                         bar.setProgress(Math.max(
                                 0.0,
-                                Math.min(1.0, (double) remaining / timeout)
-                        ));
+                                Math.min(1.0,
+                                        (double) remaining / timeout)));
                     }
                 },
                 20L,
@@ -99,10 +103,16 @@ public final class BossBarManager {
     }
 
     public void stop(Player player) {
-        stop(player.getUniqueId());
+        if (player != null) {
+            stop(player.getUniqueId());
+        }
     }
 
     public void stop(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+
         BukkitTask task = tasks.remove(uuid);
 
         if (task != null) {
@@ -120,6 +130,10 @@ public final class BossBarManager {
 
     public void stopAll() {
         for (UUID uuid : bars.keySet().toArray(new UUID[0])) {
+            stop(uuid);
+        }
+
+        for (UUID uuid : tasks.keySet().toArray(new UUID[0])) {
             stop(uuid);
         }
     }
