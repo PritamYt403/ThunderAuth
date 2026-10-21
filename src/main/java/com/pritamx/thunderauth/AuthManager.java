@@ -49,6 +49,11 @@ public final class AuthManager {
         return expiry != null && expiry > System.currentTimeMillis();
     }
 
+    private String getIdentity(Player player) {
+        FloodgateHook hook = plugin.getFloodgateHook();
+        return hook == null ? null : hook.getIdentity(player);
+    }
+
     public boolean register(Player player, String identity, String password) {
         UUID uuid = player.getUniqueId();
 
@@ -58,6 +63,11 @@ public final class AuthManager {
         if (identity == null || identity.isBlank()
                 || accounts.hasAccount(uuid)
                 || (oneAccountPerIdentity && accounts.hasIdentity(identity))) {
+            return false;
+        }
+
+        String currentIdentity = getIdentity(player);
+        if (currentIdentity == null || !currentIdentity.equals(identity)) {
             return false;
         }
 
@@ -84,14 +94,14 @@ public final class AuthManager {
         }
     }
 
-    /**
-     * Verifies both the password and the identity bound to the account.
-     */
     public boolean login(Player player, String password, String identity) {
         UUID uuid = player.getUniqueId();
         String storedIdentity = accounts.getIdentity(uuid);
+        String currentIdentity = getIdentity(player);
 
         if (identity == null || identity.isBlank()
+                || currentIdentity == null
+                || !currentIdentity.equals(identity)
                 || storedIdentity == null
                 || !storedIdentity.equals(identity)
                 || !accounts.hasAccount(uuid)
@@ -144,9 +154,19 @@ public final class AuthManager {
     public void beginAuthentication(Player player) {
         UUID uuid = player.getUniqueId();
 
+        // A remembered session is accepted only if the current identity
+        // matches the identity stored for this account.
         if (isSessionValid(uuid) && accounts.hasAccount(uuid)) {
-            authenticate(player);
-            return;
+            String currentIdentity = getIdentity(player);
+            String storedIdentity = accounts.getIdentity(uuid);
+
+            if (currentIdentity != null
+                    && currentIdentity.equals(storedIdentity)) {
+                authenticate(player);
+                return;
+            }
+
+            sessionExpiry.remove(uuid);
         }
 
         authenticated.put(uuid, false);
