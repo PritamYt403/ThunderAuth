@@ -22,6 +22,11 @@ settings:
     block-block-placement: true
     block-item-use: true
     block-interactions: true
+    block-item-drop: true
+    block-item-pickup: true
+    block-hand-swap: true
+    block-damage: true
+    block-hunger: true
 
   session:
     remember-after-quit: true
@@ -49,10 +54,15 @@ settings:
     first-registration-x: 10.5
     first-registration-y: 65.0
     first-registration-z: 10.5
+    first-registration-yaw: 0.0
+    first-registration-pitch: 0.0
+
     normal-world: world
     normal-x: 0.5
     normal-y: 65.0
     normal-z: 0.5
+    normal-yaw: 0.0
+    normal-pitch: 0.0
 
 permissions:
   login-default: true
