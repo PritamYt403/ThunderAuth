@@ -9,6 +9,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -57,7 +58,7 @@ public final class BossBarManager {
         bars.put(uuid, bar);
         remainingSeconds.put(uuid, timeout);
 
-        tasks.put(uuid, Bukkit.getScheduler().runTaskTimer(
+        BukkitTask task = Bukkit.getScheduler().runTaskTimer(
                 plugin,
                 () -> {
                     Player online = Bukkit.getPlayer(uuid);
@@ -90,7 +91,9 @@ public final class BossBarManager {
                 },
                 20L,
                 20L
-        ));
+        );
+
+        tasks.put(uuid, task);
     }
 
     private String getText(Player player, int seconds) {
@@ -140,7 +143,8 @@ public final class BossBarManager {
 
     private BarColor parseColor(String value) {
         try {
-            return BarColor.valueOf(value.toUpperCase());
+            return BarColor.valueOf(
+                    value.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException | NullPointerException exception) {
             return BarColor.RED;
         }
@@ -148,7 +152,8 @@ public final class BossBarManager {
 
     private BarStyle parseStyle(String value) {
         try {
-            return BarStyle.valueOf(value.toUpperCase());
+            return BarStyle.valueOf(
+                    value.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException | NullPointerException exception) {
             return BarStyle.SOLID;
         }
