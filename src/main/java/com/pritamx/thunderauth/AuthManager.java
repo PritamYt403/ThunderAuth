@@ -1,11 +1,12 @@
+
 package com.pritamx.thunderauth;
 
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.IOException;
-import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -45,21 +46,23 @@ public final class AuthManager {
         }
 
         Long expiry = sessionExpiry.get(uuid);
-
         return expiry != null && expiry > System.currentTimeMillis();
     }
 
     public boolean register(Player player, String identity, String password) {
         UUID uuid = player.getUniqueId();
 
-        if (accounts.hasAccount(uuid) || accounts.hasIdentity(identity)) {
+        if (identity == null || identity.isBlank()
+                || accounts.hasAccount(uuid)
+                || accounts.hasIdentity(identity)) {
             return false;
         }
 
         int min = plugin.getConfig().getInt("settings.password.min-length", 6);
         int max = plugin.getConfig().getInt("settings.password.max-length", 64);
 
-        if (password.length() < min || password.length() > max) {
+        if (password == null || password.length() < min
+                || password.length() > max) {
             return false;
         }
 
@@ -72,8 +75,8 @@ public final class AuthManager {
             return true;
         } catch (IOException exception) {
             plugin.getLogger().severe(
-                    "Could not save account for " + player.getUniqueId()
-            );
+                    "Could not save account for " + uuid + ": "
+                            + exception.getMessage());
             return false;
         }
     }
@@ -84,14 +87,13 @@ public final class AuthManager {
         if (!accounts.hasAccount(uuid)
                 || !accounts.verifyPassword(uuid, password)) {
             int attempts = failedAttempts.merge(uuid, 1, Integer::sum);
-            int maxAttempts = plugin.getConfig().getInt(
-                    "settings.login.max-attempts", 5);
+            int maxAttempts = Math.max(1, plugin.getConfig().getInt(
+                    "settings.login.max-attempts", 5));
 
             if (attempts >= maxAttempts) {
                 player.kickPlayer(plugin.messageWithoutPrefix(
                         "authentication.too-many-attempts"));
             }
-
             return false;
         }
 
@@ -101,10 +103,7 @@ public final class AuthManager {
     }
 
     public boolean changePassword(
-            Player player,
-            String oldPassword,
-            String newPassword
-    ) {
+            Player player, String oldPassword, String newPassword) {
         UUID uuid = player.getUniqueId();
 
         if (!isAuthenticated(uuid)
@@ -115,7 +114,8 @@ public final class AuthManager {
         int min = plugin.getConfig().getInt("settings.password.min-length", 6);
         int max = plugin.getConfig().getInt("settings.password.max-length", 64);
 
-        if (newPassword.length() < min || newPassword.length() > max) {
+        if (newPassword == null || newPassword.length() < min
+                || newPassword.length() > max) {
             return false;
         }
 
@@ -123,8 +123,8 @@ public final class AuthManager {
             return accounts.changePassword(uuid, newPassword);
         } catch (IOException exception) {
             plugin.getLogger().severe(
-                    "Could not change password for " + uuid
-            );
+                    "Could not change password for " + uuid + ": "
+                            + exception.getMessage());
             return false;
         }
     }
@@ -139,35 +139,28 @@ public final class AuthManager {
 
         authenticated.put(uuid, false);
         failedAttempts.put(uuid, 0);
-
         cancelTasks(uuid);
 
-        long timeout = plugin.getConfig().getLong(
-                "settings.login.timeout-seconds", 60);
+        long timeout = Math.max(1L, plugin.getConfig().getLong(
+                "settings.login.timeout-seconds", 60));
 
         timeoutTasks.put(uuid, Bukkit.getScheduler().runTaskLater(
-                plugin,
-                () -> {
+                plugin, () -> {
                     if (!isAuthenticated(uuid)) {
                         Player online = Bukkit.getPlayer(uuid);
-
                         if (online != null) {
                             online.kickPlayer(plugin.messageWithoutPrefix(
                                     "authentication.timeout"));
                         }
-
                         cleanup(uuid);
                     }
-                },
-                Math.max(1L, timeout) * 20L
-        ));
+                }, timeout * 20L));
 
-        long reminder = plugin.getConfig().getLong(
-                "settings.login.reminder-interval-seconds", 5);
+        long reminder = Math.max(1L, plugin.getConfig().getLong(
+                "settings.login.reminder-interval-seconds", 5));
 
         reminderTasks.put(uuid, Bukkit.getScheduler().runTaskTimer(
-                plugin,
-                () -> {
+                plugin, () -> {
                     Player online = Bukkit.getPlayer(uuid);
 
                     if (online == null || isAuthenticated(uuid)) {
@@ -180,10 +173,7 @@ public final class AuthManager {
                             : "authentication.reminder-register";
 
                     online.sendMessage(plugin.message(key));
-                },
-                0L,
-                Math.max(1L, reminder) * 20L
-        ));
+                }, 0L, reminder * 20L));
     }
 
     public void authenticate(Player player) {
@@ -191,15 +181,25 @@ public final class AuthManager {
 
         authenticated.put(uuid, true);
 
-        long minutes = plugin.getConfig().getLong(
-                "settings.session.duration-minutes", 30);
+        long minutes = Math.max(0L, plugin.getConfig().getLong(
+                "settings.session.duration-minutes", 30));
 
-        sessionExpiry.put(
-                uuid,
-                System.currentTimeMillis() + Math.max(0L, minutes) * 60_000L
-        );
+        sessionExpiry.put(uuid,
+                System.currentTimeMillis() + minutes * 60_000L);
 
         cancelTasks(uuid);
+
+        // Fix: remove login blindness after successful authentication.
+        player.removePotionEffect(PotionEffectType.BLINDNESS);
+
+        // Restore normal movement speeds.
+        player.setWalkSpeed(0.2F);
+        player.setFlySpeed(0.1F);
+
+        // Stop authentication BossBar, if available.
+        if (plugin.getBossBarManager() != null) {
+            plugin.getBossBarManager().stop(player);
+        }
     }
 
     public void handleQuit(Player player) {
@@ -208,13 +208,11 @@ public final class AuthManager {
         if (isAuthenticated(uuid)
                 && plugin.getConfig().getBoolean(
                 "settings.session.remember-after-quit", true)) {
-            sessionExpiry.put(
-                    uuid,
-                    System.currentTimeMillis()
-                            + Math.max(0L, plugin.getConfig().getLong(
-                            "settings.session.duration-minutes", 30))
-                            * 60_000L
-            );
+            long minutes = Math.max(0L, plugin.getConfig().getLong(
+                    "settings.session.duration-minutes", 30));
+
+            sessionExpiry.put(uuid,
+                    System.currentTimeMillis() + minutes * 60_000L);
         } else {
             sessionExpiry.remove(uuid);
         }
@@ -230,19 +228,16 @@ public final class AuthManager {
 
     private void cancelTasks(UUID uuid) {
         BukkitTask timeout = timeoutTasks.remove(uuid);
-
         if (timeout != null) {
             timeout.cancel();
         }
-
         cancelReminder(uuid);
     }
 
     private void cancelReminder(UUID uuid) {
         BukkitTask reminder = reminderTasks.remove(uuid);
-
         if (reminder != null) {
             reminder.cancel();
         }
     }
-        }
+}
