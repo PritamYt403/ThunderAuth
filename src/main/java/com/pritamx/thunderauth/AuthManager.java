@@ -22,8 +22,6 @@ public final class AuthManager {
     private final Map<UUID, Long> sessionExpiry = new HashMap<>();
     private final Map<UUID, BukkitTask> timeoutTasks = new HashMap<>();
     private final Map<UUID, BukkitTask> reminderTasks = new HashMap<>();
-
-    // Location where the player was before authentication.
     private final Map<UUID, Location> returnLocations = new HashMap<>();
 
     public AuthManager(ThunderAuth plugin, AccountStore accounts) {
@@ -36,7 +34,7 @@ public final class AuthManager {
     }
 
     public boolean isAuthenticated(Player player) {
-        return isAuthenticated(player.getUniqueId());
+        return player != null && isAuthenticated(player.getUniqueId());
     }
 
     public boolean hasAccount(UUID uuid) {
@@ -46,11 +44,22 @@ public final class AuthManager {
     public boolean isSessionValid(UUID uuid) {
         if (!plugin.getConfig().getBoolean(
                 "settings.session.remember-after-quit", true)) {
+            sessionExpiry.remove(uuid);
             return false;
         }
 
         Long expiry = sessionExpiry.get(uuid);
-        return expiry != null && expiry > System.currentTimeMillis();
+
+        if (expiry == null) {
+            return false;
+        }
+
+        if (expiry <= System.currentTimeMillis()) {
+            sessionExpiry.remove(uuid);
+            return false;
+        }
+
+        return true;
     }
 
     private String getIdentity(Player player) {
@@ -58,10 +67,6 @@ public final class AuthManager {
         return hook == null ? null : hook.getIdentity(player);
     }
 
-    /**
-     * Save the player's location before moving them to the login spawn.
-     * Call this from the join listener before any authentication teleport.
-     */
     public void saveReturnLocation(Player player) {
         if (player == null || !player.isOnline()) {
             return;
@@ -71,16 +76,10 @@ public final class AuthManager {
 
         if (location.getWorld() != null) {
             returnLocations.put(
-                    player.getUniqueId(),
-                    location.clone()
-            );
+                    player.getUniqueId(), location.clone());
         }
     }
 
-    /**
-     * Restore the location saved before authentication.
-     * Returns false if no saved location is available.
-     */
     public boolean restoreReturnLocation(Player player) {
         if (player == null || !player.isOnline()) {
             return false;
@@ -95,22 +94,25 @@ public final class AuthManager {
         return player.teleport(location);
     }
 
-    /**
-     * Discard a saved location without teleporting.
-     */
     public void clearReturnLocation(UUID uuid) {
         returnLocations.remove(uuid);
     }
 
     public boolean register(Player player, String identity, String password) {
+        if (player == null || !player.isOnline()) {
+            return false;
+        }
+
         UUID uuid = player.getUniqueId();
 
-        boolean oneAccountPerIdentity = plugin.getConfig().getBoolean(
-                "settings.security.one-account-per-identity", true);
-
         if (identity == null || identity.isBlank()
-                || accounts.hasAccount(uuid)
-                || (oneAccountPerIdentity && accounts.hasIdentity(identity))) {
+                || accounts.hasAccount(uuid)) {
+            return false;
+        }
+
+        if (plugin.getConfig().getBoolean(
+                "settings.security.one-account-per-identity", true)
+                && accounts.hasIdentity(identity)) {
             return false;
         }
 
@@ -135,6 +137,7 @@ public final class AuthManager {
                 return false;
             }
 
+            failedAttempts.remove(uuid);
             authenticate(player);
             return true;
         } catch (IOException exception) {
@@ -146,18 +149,24 @@ public final class AuthManager {
     }
 
     public boolean login(Player player, String password, String identity) {
+        if (player == null || !player.isOnline()
+                || password == null) {
+            return false;
+        }
+
         UUID uuid = player.getUniqueId();
         String storedIdentity = accounts.getIdentity(uuid);
         String currentIdentity = getIdentity(player);
 
-        if (identity == null || identity.isBlank()
-                || currentIdentity == null
-                || !currentIdentity.equals(identity)
-                || storedIdentity == null
-                || !storedIdentity.equals(identity)
-                || !accounts.hasAccount(uuid)
-                || !accounts.verifyPassword(uuid, password)) {
+        boolean valid = identity != null && !identity.isBlank()
+                && currentIdentity != null
+                && currentIdentity.equals(identity)
+                && storedIdentity != null
+                && storedIdentity.equals(identity)
+                && accounts.hasAccount(uuid)
+                && accounts.verifyPassword(uuid, password);
 
+        if (!valid) {
             int attempts = failedAttempts.merge(uuid, 1, Integer::sum);
             int maxAttempts = Math.max(1, plugin.getConfig().getInt(
                     "settings.login.max-attempts", 5));
@@ -170,17 +179,19 @@ public final class AuthManager {
             return false;
         }
 
-        authenticate(player);
         failedAttempts.remove(uuid);
+        authenticate(player);
         return true;
     }
 
     public boolean changePassword(
             Player player, String oldPassword, String newPassword) {
-        UUID uuid = player.getUniqueId();
-
-        if (!isAuthenticated(uuid)
-                || !accounts.verifyPassword(uuid, oldPassword)) {
+        if (player == null || !player.isOnline()
+                || !isAuthenticated(player)
+                || oldPassword == null
+                || newPassword == null
+                || !accounts.verifyPassword(
+                        player.getUniqueId(), oldPassword)) {
             return false;
         }
 
@@ -189,22 +200,27 @@ public final class AuthManager {
         int max = plugin.getConfig().getInt(
                 "settings.password.max-length", 64);
 
-        if (newPassword == null || newPassword.length() < min
-                || newPassword.length() > max) {
+        if (newPassword.length() < min || newPassword.length() > max) {
             return false;
         }
 
         try {
-            return accounts.changePassword(uuid, newPassword);
+            return accounts.changePassword(
+                    player.getUniqueId(), newPassword);
         } catch (IOException exception) {
             plugin.getLogger().severe(
-                    "Could not change password for " + uuid + ": "
+                    "Could not change password for "
+                            + player.getUniqueId() + ": "
                             + exception.getMessage());
             return false;
         }
     }
 
     public void beginAuthentication(Player player) {
+        if (player == null || !player.isOnline()) {
+            return;
+        }
+
         UUID uuid = player.getUniqueId();
 
         if (isSessionValid(uuid) && accounts.hasAccount(uuid)) {
@@ -213,6 +229,7 @@ public final class AuthManager {
 
             if (currentIdentity != null
                     && currentIdentity.equals(storedIdentity)) {
+                failedAttempts.remove(uuid);
                 authenticate(player);
                 return;
             }
@@ -258,19 +275,26 @@ public final class AuthManager {
                             : "authentication.reminder-register";
 
                     online.sendMessage(plugin.message(key));
-                }, 0L, reminder * 20L));
+                }, reminder * 20L, reminder * 20L));
     }
 
     public void authenticate(Player player) {
-        UUID uuid = player.getUniqueId();
+        if (player == null || !player.isOnline()) {
+            return;
+        }
 
+        UUID uuid = player.getUniqueId();
         authenticated.put(uuid, true);
 
         long minutes = Math.max(0L, plugin.getConfig().getLong(
                 "settings.session.duration-minutes", 30));
 
-        sessionExpiry.put(uuid,
-                System.currentTimeMillis() + minutes * 60_000L);
+        if (minutes == 0L) {
+            sessionExpiry.remove(uuid);
+        } else {
+            sessionExpiry.put(uuid,
+                    System.currentTimeMillis() + minutes * 60_000L);
+        }
 
         cancelTasks(uuid);
         player.removePotionEffect(PotionEffectType.BLINDNESS);
@@ -291,13 +315,16 @@ public final class AuthManager {
             long minutes = Math.max(0L, plugin.getConfig().getLong(
                     "settings.session.duration-minutes", 30));
 
-            sessionExpiry.put(uuid,
-                    System.currentTimeMillis() + minutes * 60_000L);
+            if (minutes > 0L) {
+                sessionExpiry.put(uuid,
+                        System.currentTimeMillis() + minutes * 60_000L);
+            } else {
+                sessionExpiry.remove(uuid);
+            }
         } else {
             sessionExpiry.remove(uuid);
         }
 
-        // Don't retain a stale location after the player disconnects.
         returnLocations.remove(uuid);
         cleanup(uuid);
     }
@@ -305,6 +332,7 @@ public final class AuthManager {
     public void cleanup(UUID uuid) {
         authenticated.remove(uuid);
         failedAttempts.remove(uuid);
+        returnLocations.remove(uuid);
         cancelTasks(uuid);
     }
 
