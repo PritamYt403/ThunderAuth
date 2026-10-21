@@ -9,7 +9,9 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public final class AuthManager {
@@ -30,7 +32,7 @@ public final class AuthManager {
     }
 
     public boolean isAuthenticated(UUID uuid) {
-        return authenticated.getOrDefault(uuid, false);
+        return uuid != null && authenticated.getOrDefault(uuid, false);
     }
 
     public boolean isAuthenticated(Player player) {
@@ -42,9 +44,11 @@ public final class AuthManager {
     }
 
     public boolean isSessionValid(UUID uuid) {
-        if (!plugin.getConfig().getBoolean(
+        if (uuid == null || !plugin.getConfig().getBoolean(
                 "settings.session.remember-after-quit", true)) {
-            sessionExpiry.remove(uuid);
+            if (uuid != null) {
+                sessionExpiry.remove(uuid);
+            }
             return false;
         }
 
@@ -85,30 +89,35 @@ public final class AuthManager {
             return false;
         }
 
-        Location location = returnLocations.remove(player.getUniqueId());
+        UUID uuid = player.getUniqueId();
+        Location location = returnLocations.get(uuid);
 
         if (location == null || location.getWorld() == null) {
             return false;
         }
 
-        return player.teleport(location);
+        if (!player.teleport(location)) {
+            return false;
+        }
+
+        returnLocations.remove(uuid);
+        return true;
     }
 
     public void clearReturnLocation(UUID uuid) {
-        returnLocations.remove(uuid);
+        if (uuid != null) {
+            returnLocations.remove(uuid);
+        }
     }
 
     public boolean register(Player player, String identity, String password) {
-        if (player == null || !player.isOnline()) {
+        if (player == null || !player.isOnline()
+                || identity == null || identity.isBlank()
+                || accounts.hasAccount(player.getUniqueId())) {
             return false;
         }
 
         UUID uuid = player.getUniqueId();
-
-        if (identity == null || identity.isBlank()
-                || accounts.hasAccount(uuid)) {
-            return false;
-        }
 
         if (plugin.getConfig().getBoolean(
                 "settings.security.one-account-per-identity", true)
@@ -149,8 +158,7 @@ public final class AuthManager {
     }
 
     public boolean login(Player player, String password, String identity) {
-        if (player == null || !player.isOnline()
-                || password == null) {
+        if (player == null || !player.isOnline() || password == null) {
             return false;
         }
 
@@ -188,8 +196,7 @@ public final class AuthManager {
             Player player, String oldPassword, String newPassword) {
         if (player == null || !player.isOnline()
                 || !isAuthenticated(player)
-                || oldPassword == null
-                || newPassword == null
+                || oldPassword == null || newPassword == null
                 || !accounts.verifyPassword(
                         player.getUniqueId(), oldPassword)) {
             return false;
@@ -249,7 +256,7 @@ public final class AuthManager {
                     if (!isAuthenticated(uuid)) {
                         Player online = Bukkit.getPlayer(uuid);
 
-                        if (online != null) {
+                        if (online != null && online.isOnline()) {
                             online.kickPlayer(plugin.messageWithoutPrefix(
                                     "authentication.timeout"));
                         }
@@ -265,7 +272,8 @@ public final class AuthManager {
                 plugin, () -> {
                     Player online = Bukkit.getPlayer(uuid);
 
-                    if (online == null || isAuthenticated(uuid)) {
+                    if (online == null || !online.isOnline()
+                            || isAuthenticated(uuid)) {
                         cancelReminder(uuid);
                         return;
                     }
@@ -307,6 +315,10 @@ public final class AuthManager {
     }
 
     public void handleQuit(Player player) {
+        if (player == null) {
+            return;
+        }
+
         UUID uuid = player.getUniqueId();
 
         if (isAuthenticated(uuid)
@@ -325,15 +337,40 @@ public final class AuthManager {
             sessionExpiry.remove(uuid);
         }
 
-        returnLocations.remove(uuid);
         cleanup(uuid);
     }
 
     public void cleanup(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+
         authenticated.remove(uuid);
         failedAttempts.remove(uuid);
         returnLocations.remove(uuid);
         cancelTasks(uuid);
+    }
+
+    public void cleanupAll() {
+        Set<UUID> uuids = new HashSet<>();
+
+        uuids.addAll(authenticated.keySet());
+        uuids.addAll(failedAttempts.keySet());
+        uuids.addAll(sessionExpiry.keySet());
+        uuids.addAll(timeoutTasks.keySet());
+        uuids.addAll(reminderTasks.keySet());
+        uuids.addAll(returnLocations.keySet());
+
+        for (UUID uuid : uuids) {
+            cleanup(uuid);
+        }
+
+        sessionExpiry.clear();
+        returnLocations.clear();
+        authenticated.clear();
+        failedAttempts.clear();
+        timeoutTasks.clear();
+        reminderTasks.clear();
     }
 
     private void cancelTasks(UUID uuid) {
