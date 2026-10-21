@@ -45,9 +45,9 @@ public final class AuthCommands implements CommandExecutor {
             case "thunderauth":
                 return handleAdmin(sender, args);
             case "setlogspawn":
-                return handleSetLoginSpawn(sender);
+                return handleSetSpawn(sender, true);
             case "setregspawn":
-                return handleSetRegistrationSpawn(sender);
+                return handleSetSpawn(sender, false);
             default:
                 return false;
         }
@@ -115,26 +115,28 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        if (auth.register(player, identity, args[0])) {
-            player.sendMessage(plugin.message(
-                    "authentication.register-success"));
-
-            if (plugin.getConfig().getBoolean(
-                    "settings.announcements.welcome-on-register", true)) {
-                player.sendMessage(plugin.messageWithoutPrefix(
-                        "announcements.welcome-register"));
-            }
-
-            Bukkit.broadcastMessage(plugin.messageWithoutPrefix(
-                    "announcements.registered")
-                    .replace("%player%", player.getName()));
-
-            // Registration successful: send the player to the saved main spawn.
-            teleportToLoginSpawn(player);
-        } else {
+        if (!auth.register(player, identity, args[0])) {
             player.sendMessage(plugin.message(
                     "authentication.already-registered"));
+            return true;
         }
+
+        player.sendMessage(plugin.message(
+                "authentication.register-success"));
+
+        if (plugin.getConfig().getBoolean(
+                "settings.announcements.welcome-on-register", true)) {
+            player.sendMessage(plugin.messageWithoutPrefix(
+                    "announcements.welcome-register"));
+        }
+
+        Bukkit.broadcastMessage(plugin.messageWithoutPrefix(
+                "announcements.registered")
+                .replace("%player%", player.getName()));
+
+        // Registration always finishes at the main login spawn.
+        auth.clearReturnLocation(player.getUniqueId());
+        teleportToLoginSpawn(player);
 
         return true;
     }
@@ -171,7 +173,8 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        String storedIdentity = accounts.getIdentity(player.getUniqueId());
+        String storedIdentity = accounts.getIdentity(
+                player.getUniqueId());
 
         if (storedIdentity == null || !storedIdentity.equals(identity)) {
             player.sendMessage(plugin.message(
@@ -179,31 +182,40 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        if (auth.login(player, args[0], identity)) {
-            player.sendMessage(plugin.message(
-                    "authentication.login-success"));
-
-            if (plugin.getConfig().getBoolean(
-                    "settings.announcements.welcome-on-login", true)) {
-                player.sendMessage(plugin.messageWithoutPrefix(
-                        "announcements.welcome-login"));
+        if (!auth.login(player, args[0], identity)) {
+            if (player.isOnline()) {
+                player.sendMessage(plugin.message(
+                        "authentication.wrong-password"));
             }
+            return true;
+        }
 
-            Bukkit.broadcastMessage(plugin.messageWithoutPrefix(
-                    "announcements.logged-in")
-                    .replace("%player%", player.getName()));
+        player.sendMessage(plugin.message(
+                "authentication.login-success"));
 
-            // Do not teleport here: AuthManager/AuthListener will restore
-            // the player's saved return location after authentication.
-        } else if (player.isOnline()) {
-            player.sendMessage(plugin.message(
-                    "authentication.wrong-password"));
+        if (plugin.getConfig().getBoolean(
+                "settings.announcements.welcome-on-login", true)) {
+            player.sendMessage(plugin.messageWithoutPrefix(
+                    "announcements.welcome-login"));
+        }
+
+        Bukkit.broadcastMessage(plugin.messageWithoutPrefix(
+                "announcements.logged-in")
+                .replace("%player%", player.getName()));
+
+        // Restore the location saved before teleporting to login spawn.
+        if (!auth.restoreReturnLocation(player)) {
+            plugin.getLogger().warning(
+                    "No saved return location for " + player.getUniqueId());
         }
 
         return true;
     }
 
-    private boolean handleSetLoginSpawn(CommandSender sender) {
+    private boolean handleSetSpawn(
+            CommandSender sender,
+            boolean loginSpawn
+    ) {
         if (!sender.hasPermission("thunderauth.admin")) {
             sender.sendMessage(plugin.message("commands.no-permission"));
             return true;
@@ -214,38 +226,18 @@ public final class AuthCommands implements CommandExecutor {
             return true;
         }
 
-        saveSpawn(player.getLocation(), "settings.spawn.normal-");
-        player.sendMessage(plugin.color("&aLogin spawn location saved!"));
-        return true;
-    }
-
-    private boolean handleSetRegistrationSpawn(CommandSender sender) {
-        if (!sender.hasPermission("thunderauth.admin")) {
-            sender.sendMessage(plugin.message("commands.no-permission"));
-            return true;
-        }
-
-        if (!(sender instanceof Player player)) {
-            sender.sendMessage(plugin.message("commands.player-only"));
-            return true;
-        }
-
-        saveSpawn(player.getLocation(), "settings.spawn.first-registration-");
-        plugin.getConfig().set(
-                "settings.spawn.first-registration-enabled", true);
-        plugin.saveConfig();
-
-        player.sendMessage(plugin.color(
-                "&aRegistration spawn location saved!"));
-        return true;
-    }
-
-    private void saveSpawn(Location location, String base) {
+        Location location = player.getLocation();
         World world = location.getWorld();
 
         if (world == null) {
-            return;
+            player.sendMessage(plugin.color(
+                    "&cCould not determine your current world."));
+            return true;
         }
+
+        String base = loginSpawn
+                ? "settings.spawn.normal-"
+                : "settings.spawn.first-registration-";
 
         plugin.getConfig().set(base + "world", world.getName());
         plugin.getConfig().set(base + "x", location.getX());
@@ -253,7 +245,20 @@ public final class AuthCommands implements CommandExecutor {
         plugin.getConfig().set(base + "z", location.getZ());
         plugin.getConfig().set(base + "yaw", location.getYaw());
         plugin.getConfig().set(base + "pitch", location.getPitch());
+
+        if (!loginSpawn) {
+            plugin.getConfig().set(
+                    "settings.spawn.first-registration-enabled", true);
+        }
+
         plugin.saveConfig();
+
+        player.sendMessage(plugin.color(
+                loginSpawn
+                        ? "&aLogin spawn location saved!"
+                        : "&aRegistration spawn location saved!"));
+
+        return true;
     }
 
     private void teleportToLoginSpawn(Player player) {
@@ -266,6 +271,8 @@ public final class AuthCommands implements CommandExecutor {
         if (world == null) {
             plugin.getLogger().warning(
                     "Login spawn world '" + worldName + "' was not found.");
+            player.sendMessage(plugin.color(
+                    "&cLogin spawn world was not found."));
             return;
         }
 
@@ -291,7 +298,8 @@ public final class AuthCommands implements CommandExecutor {
         }
 
         if (args.length != 2) {
-            player.sendMessage(plugin.messageWithoutPrefix("password.usage"));
+            player.sendMessage(plugin.messageWithoutPrefix(
+                    "password.usage"));
             return true;
         }
 
