@@ -38,6 +38,12 @@ commands:
   reload-success: "&aThunderAuth configuration reloaded."
   reload-usage: "&eUsage: /thunderauth reload"
 
+spawn:
+  login-set: "&aLogin spawn location saved successfully."
+  register-set: "&aRegistration spawn location saved successfully."
+  world-not-found: "&cThe configured spawn world could not be found."
+  teleport-failed: "&cCould not teleport you to the configured spawn."
+
 bossbar:
   register: "&cRegister within &f%time% &cseconds"
   login: "&cLogin within &f%time% &cseconds"
