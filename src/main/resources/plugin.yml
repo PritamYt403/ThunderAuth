@@ -1,0 +1,43 @@
+name: ThunderAuth
+version: '1.0.0'
+main: com.pritamx.thunderauth.ThunderAuth
+api-version: '1.21'
+author: Pritam
+description: Made by Pritam | Professional Minecraft Authentication System
+website: https://github.com/PritamYt403/ThunderAuth
+
+softdepend:
+  - floodgate
+
+commands:
+  register:
+    description: Register a ThunderAuth account
+    usage: "/register <password> <confirmPassword>"
+    aliases: [reg]
+
+  login:
+    description: Login to a ThunderAuth account
+    usage: "/login <password>"
+    aliases: [l]
+
+  changepassword:
+    description: Change your account password
+    usage: "/changepassword <oldPassword> <newPassword>"
+    aliases: [changepass]
+
+  thunderauth:
+    description: ThunderAuth administration command
+    usage: "/thunderauth reload"
+
+  setlogspawn:
+    description: Set the login spawn location
+    usage: "/setlogspawn"
+
+  setregspawn:
+    description: Set the registration spawn location
+    usage: "/setregspawn"
+
+permissions:
+  thunderauth.admin:
+    description: Allows managing ThunderAuth and spawn locations
+    default: op
