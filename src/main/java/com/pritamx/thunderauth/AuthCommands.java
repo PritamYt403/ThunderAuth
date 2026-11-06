@@ -10,12 +10,18 @@ import org.bukkit.entity.Player;
 
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class AuthCommands implements CommandExecutor {
 
     private final ThunderAuth plugin;
     private final AuthManager authManager;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
+
+    private final Set<UUID> loginInProgress =
+            ConcurrentHashMap.newKeySet();
 
     public AuthCommands(ThunderAuth plugin, AuthManager authManager) {
         this.plugin = plugin;
@@ -63,11 +69,18 @@ public final class AuthCommands implements CommandExecutor {
             return;
         }
 
+        UUID playerId = player.getUniqueId();
+
+        if (!loginInProgress.add(playerId)) {
+            return;
+        }
+
         char[] password = args[0].toCharArray();
 
         authManager.login(player, password).whenComplete((success, error) ->
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     Arrays.fill(password, '\0');
+                    loginInProgress.remove(playerId);
 
                     if (!player.isOnline()) {
                         return;
@@ -84,8 +97,27 @@ public final class AuthCommands implements CommandExecutor {
 
                     if (Boolean.TRUE.equals(success)) {
                         send(player, "authentication.login.success");
+                        return;
+                    }
+
+                    int maxAttempts = Math.max(1,
+                            plugin.getConfig().getInt(
+                                    "settings.login.max-attempts", 5
+                            )
+                    );
+
+                    int remaining = authManager.recordFailedLogin(
+                            player, maxAttempts
+                    );
+
+                    if (remaining <= 0) {
+                        kick(player, "authentication.login.max-attempts");
                     } else {
-                        send(player, "authentication.login.incorrect-password");
+                        send(player,
+                                "authentication.login.incorrect-password",
+                                "{attempts}",
+                                String.valueOf(remaining)
+                        );
                     }
                 })
         );
@@ -117,8 +149,12 @@ public final class AuthCommands implements CommandExecutor {
             return;
         }
 
-        int min = plugin.getConfig().getInt("settings.password.min-length", 6);
-        int max = plugin.getConfig().getInt("settings.password.max-length", 32);
+        int min = plugin.getConfig().getInt(
+                "settings.password.min-length", 6
+        );
+        int max = plugin.getConfig().getInt(
+                "settings.password.max-length", 32
+        );
 
         if (args[0].length() < min) {
             send(player, "authentication.register.password-too-short",
@@ -198,8 +234,12 @@ public final class AuthCommands implements CommandExecutor {
             return;
         }
 
-        int min = plugin.getConfig().getInt("settings.password.min-length", 6);
-        int max = plugin.getConfig().getInt("settings.password.max-length", 32);
+        int min = plugin.getConfig().getInt(
+                "settings.password.min-length", 6
+        );
+        int max = plugin.getConfig().getInt(
+                "settings.password.max-length", 32
+        );
 
         if (args[1].length() < min) {
             send(player, "authentication.register.password-too-short",
@@ -251,6 +291,15 @@ public final class AuthCommands implements CommandExecutor {
         }
 
         send(sender, "general.unknown-command");
+    }
+
+    private void kick(Player player, String path) {
+        String prefix = plugin.getMessages().getString("prefix", "");
+        String message = plugin.getMessages().getString(
+                path, "<red>Maximum login attempts reached."
+        );
+
+        player.kick(miniMessage.deserialize(prefix + message));
     }
 
     private void send(CommandSender sender, String path) {
