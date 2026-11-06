@@ -1,0 +1,175 @@
+# ==========================================
+#             ThunderAuth
+#       Main Configuration File
+# ==========================================
+
+config-version: 1
+
+# Server branding
+brand:
+  name: "FIREMC"
+
+  colors:
+    brand: "#FFB900"
+    text: "#FFFFFF"
+    highlight: "#FFB900"
+
+# ==========================================
+#              DATABASE
+# ==========================================
+
+storage:
+  type: "SQLITE"
+  sqlite:
+    file: "accounts.db"
+    auto-save: true
+    backup-on-shutdown: true
+
+# ==========================================
+#             AUTHENTICATION
+# ==========================================
+
+settings:
+
+  login:
+    enabled: true
+    timeout-seconds: 60
+    max-attempts: 5
+
+  register:
+    enabled: true
+    timeout-seconds: 60
+
+  password:
+    min-length: 6
+    max-length: 32
+
+  session:
+    # 0 = Login required after every reconnect
+    timeout-seconds: 0
+    remember-after-quit: true
+
+  security:
+    block-movement: true
+    block-chat: true
+    block-commands: true
+    block-block-break: true
+    block-block-place: true
+    block-interactions: true
+    block-inventory: true
+    block-damage: true
+    hide-players-before-auth: false
+    prevent-teleport-before-auth: true
+
+# ==========================================
+#             PRESENTATION
+# ==========================================
+
+presentation:
+
+  # Login and Register use the same design
+  enabled: true
+
+  titles:
+    enabled: true
+
+    login:
+      title: "<#FFB900><bold>FIREMC</bold>"
+      subtitle: "<white>Use <#FFB900>/login <password></#FFB900> to login"
+
+    register:
+      title: "<#FFB900><bold>FIREMC</bold>"
+      subtitle: "<white>Use <#FFB900>/register <password> <password></#FFB900> to register"
+
+    fade:
+      fade-in: 10
+      stay: 35
+      fade-out: 20
+
+  actionbar:
+    enabled: true
+    login: "<#FFB900>FIREMC <white>» Please login to continue."
+    register: "<#FFB900>FIREMC <white>» Please register to continue."
+
+  bossbar:
+    enabled: true
+
+    color: "YELLOW"
+    style: "SOLID"
+
+    login:
+      title: "<#FFB900>FIREMC <white>» Login time: <#FFB900>{time}s"
+
+    register:
+      title: "<#FFB900>FIREMC <white>» Register time: <#FFB900>{time}s"
+
+    progress:
+      enabled: true
+      color: "YELLOW"
+
+  reminders:
+    enabled: true
+    interval-seconds: 10
+
+    login: "<#FFB900>FIREMC <white>» Use <#FFB900>/login <password>"
+    register: "<#FFB900>FIREMC <white>» Use <#FFB900>/register <password> <password>"
+
+# ==========================================
+#              ANNOUNCEMENTS
+# ==========================================
+
+announcements:
+
+  login:
+    enabled: true
+    message: "<#FFB900>FIREMC <white>» <yellow>{player}</yellow> logged in."
+
+  register:
+    enabled: true
+    message: "<#FFB900>FIREMC <white>» <yellow>{player}</yellow> registered."
+
+# ==========================================
+#                EFFECTS
+# ==========================================
+
+effects:
+
+  blindness:
+    enabled: false
+    remove-after-authentication: true
+
+# ==========================================
+#                SPAWNS
+# ==========================================
+
+spawns:
+
+  login:
+    enabled: false
+
+  register:
+    enabled: false
+
+  return-to-previous-location: true
+  return-to-first-register-location: false
+
+# ==========================================
+#              INTEGRATIONS
+# ==========================================
+
+integrations:
+
+  floodgate:
+    enabled: true
+
+  geyser:
+    bedrock-support: true
+
+# ==========================================
+#              LOGGING
+# ==========================================
+
+logging:
+  console: true
+  authentication-events: true
+  failed-login-attempts: true
