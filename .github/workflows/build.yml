@@ -1,5 +1,5 @@
 
-name: ThunderAuth Build
+name: ThunderAuth Dual Build
 
 on:
   push:
@@ -15,24 +15,38 @@ permissions:
 
 jobs:
   build:
+    name: Build ${{ matrix.jar_suffix }}
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: paper-1.21
+            java: '21'
+            jar_suffix: 1.21.x
+
+          - profile: paper-26
+            java: '25'
+            jar_suffix: 26.x
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java 21
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: ${{ matrix.java }}
           cache: maven
 
       - name: Build ThunderAuth
-        run: mvn -B clean package
+        run: mvn -B -P${{ matrix.profile }} clean package
 
       - name: Upload plugin JAR
         uses: actions/upload-artifact@v4
         with:
-          name: ThunderAuth
-          path: target/*.jar
+          name: ThunderAuth-${{ matrix.jar_suffix }}
+          path: target/ThunderAuth-${{ matrix.jar_suffix }}.jar
+          if-no-files-found: error
