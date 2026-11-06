@@ -159,9 +159,14 @@ public final class AuthListener implements Listener {
                                 .getString("prefix", "");
 
                         String message = plugin.getMessages()
-                                .getString(path, "<red>Authentication timed out.");
+                                .getString(
+                                        path,
+                                        "<red>Authentication timed out."
+                                );
 
-                        player.kick(miniMessage.deserialize(prefix + message));
+                        player.kick(
+                                miniMessage.deserialize(prefix + message)
+                        );
                         return;
                     }
 
@@ -363,6 +368,15 @@ public final class AuthListener implements Listener {
                 && isBlocked(player)) {
             event.setCancelled(true);
         }
+    }
+
+    public void shutdown() {
+        for (BukkitTask task : authTasks.values()) {
+            task.cancel();
+        }
+
+        authTasks.clear();
+        bossBarManager.removeAll();
     }
 
     @EventHandler
