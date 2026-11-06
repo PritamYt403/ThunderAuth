@@ -18,6 +18,7 @@ public final class ThunderAuth extends JavaPlugin {
 
     private AccountStore accountStore;
     private AuthManager authManager;
+    private AuthListener authListener;
 
     private File messagesFile;
     private FileConfiguration messages;
@@ -26,6 +27,8 @@ public final class ThunderAuth extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        shuttingDown.set(false);
+
         saveDefaultConfig();
         loadMessages();
 
@@ -102,8 +105,10 @@ public final class ThunderAuth extends JavaPlugin {
             registerCommand("changepass", commands);
             registerCommand("thunderauth", commands);
 
+            authListener = new AuthListener(this, authManager);
+
             getServer().getPluginManager().registerEvents(
-                    new AuthListener(this, authManager),
+                    authListener,
                     this
             );
 
@@ -159,6 +164,12 @@ public final class ThunderAuth extends JavaPlugin {
     @Override
     public void onDisable() {
         shuttingDown.set(true);
+
+        // Stop authentication timers and remove BossBars.
+        if (authListener != null) {
+            authListener.shutdown();
+            authListener = null;
+        }
 
         if (accountStore == null) {
             return;
