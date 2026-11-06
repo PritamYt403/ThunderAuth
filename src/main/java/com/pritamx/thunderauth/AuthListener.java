@@ -3,23 +3,37 @@ package com.pritamx.thunderauth;
 
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.player.PlayerBedEnterEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerShearEntityEvent;
+import org.bukkit.event.player.PlayerSwapHandItemsEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.event.player.PlayerToggleSneakEvent;
+import org.bukkit.event.player.PlayerToggleSprintEvent;
+import org.bukkit.event.vehicle.VehicleEnterEvent;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.Locale;
@@ -48,30 +62,34 @@ public final class AuthListener implements Listener {
         Player player = event.getPlayer();
         authManager.removeAuthenticated(player);
 
-        authManager.isRegistered(player).whenComplete((registered, error) ->
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    if (!player.isOnline() || !plugin.isEnabled()) {
-                        return;
-                    }
+        authManager.isRegistered(player).whenComplete((registered, error) -> {
+            if (!plugin.isEnabled()) {
+                return;
+            }
 
-                    if (error != null) {
-                        send(player, "general.database-error");
-                        plugin.getLogger().severe(
-                                "Could not check account status for "
-                                        + player.getName()
-                        );
-                        return;
-                    }
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!player.isOnline() || !plugin.isEnabled()) {
+                    return;
+                }
 
-                    if (Boolean.TRUE.equals(registered)) {
-                        showLoginPrompt(player);
-                        startAuthTimer(player, true);
-                    } else {
-                        showRegisterPrompt(player);
-                        startAuthTimer(player, false);
-                    }
-                })
-        );
+                if (error != null) {
+                    send(player, "general.database-error");
+                    plugin.getLogger().severe(
+                            "Could not check account status for "
+                                    + player.getName()
+                    );
+                    return;
+                }
+
+                if (Boolean.TRUE.equals(registered)) {
+                    showLoginPrompt(player);
+                    startAuthTimer(player, true);
+                } else {
+                    showRegisterPrompt(player);
+                    startAuthTimer(player, false);
+                }
+            });
+        });
     }
 
     private void showLoginPrompt(Player player) {
@@ -91,7 +109,8 @@ public final class AuthListener implements Listener {
                 "presentation.titles.register.title", "<gold>FIREMC"
         );
         String subtitle = plugin.getConfig().getString(
-                "presentation.titles.register.subtitle", "<white>Please register."
+                "presentation.titles.register.subtitle",
+                "<white>Please register."
         );
 
         showTitle(player, title, subtitle);
@@ -246,35 +265,57 @@ public final class AuthListener implements Listener {
         return !authManager.isAuthenticated(player);
     }
 
+    private boolean securityEnabled(String setting) {
+        return plugin.getConfig().getBoolean(
+                "settings.security." + setting, true
+        );
+    }
+
+    // Movement lock: blocks exact position changes, but allows camera rotation.
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent event) {
-        if (!plugin.getConfig().getBoolean(
-                "settings.security.block-movement", true)
+        if (!securityEnabled("block-movement")
                 || !isBlocked(event.getPlayer())
                 || event.getTo() == null) {
             return;
         }
 
-        if (event.getFrom().getBlockX() != event.getTo().getBlockX()
-                || event.getFrom().getBlockY() != event.getTo().getBlockY()
-                || event.getFrom().getBlockZ() != event.getTo().getBlockZ()) {
-            event.setTo(event.getFrom());
+        Location from = event.getFrom();
+        Location to = event.getTo();
+
+        boolean positionChanged =
+                Double.compare(from.getX(), to.getX()) != 0
+                || Double.compare(from.getY(), to.getY()) != 0
+                || Double.compare(from.getZ(), to.getZ()) != 0;
+
+        if (positionChanged) {
+            Location locked = from.clone();
+            locked.setYaw(to.getYaw());
+            locked.setPitch(to.getPitch());
+            event.setTo(locked);
         }
     }
 
+    // Explicitly blocks teleportation and portals before authentication.
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onChat(AsyncPlayerChatEvent event) {
+    public void onTeleport(PlayerTeleportEvent event) {
         if (plugin.getConfig().getBoolean(
-                "settings.security.block-chat", true)
+                "settings.security.prevent-teleport-before-auth", true)
                 && isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onChat(AsyncPlayerChatEvent event) {
+        if (securityEnabled("block-chat") && isBlocked(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onCommand(PlayerCommandPreprocessEvent event) {
-        if (!plugin.getConfig().getBoolean(
-                "settings.security.block-commands", true)
+        if (!securityEnabled("block-commands")
                 || !isBlocked(event.getPlayer())) {
             return;
         }
@@ -296,8 +337,15 @@ public final class AuthListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
-        if (plugin.getConfig().getBoolean(
-                "settings.security.block-block-break", true)
+        if (securityEnabled("block-block-break")
+                && isBlocked(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBlockDamage(BlockDamageEvent event) {
+        if (securityEnabled("block-block-break")
                 && isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
@@ -305,8 +353,7 @@ public final class AuthListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
-        if (plugin.getConfig().getBoolean(
-                "settings.security.block-block-place", true)
+        if (securityEnabled("block-block-place")
                 && isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
@@ -314,8 +361,7 @@ public final class AuthListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInteract(PlayerInteractEvent event) {
-        if (plugin.getConfig().getBoolean(
-                "settings.security.block-interactions", true)
+        if (securityEnabled("block-interactions")
                 && isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
@@ -323,8 +369,7 @@ public final class AuthListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInteractEntity(PlayerInteractEntityEvent event) {
-        if (plugin.getConfig().getBoolean(
-                "settings.security.block-interactions", true)
+        if (securityEnabled("block-interactions")
                 && isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
@@ -333,8 +378,7 @@ public final class AuthListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInventoryOpen(InventoryOpenEvent event) {
         if (event.getPlayer() instanceof Player player
-                && plugin.getConfig().getBoolean(
-                        "settings.security.block-inventory", true)
+                && securityEnabled("block-inventory")
                 && isBlocked(player)) {
             event.setCancelled(true);
         }
@@ -343,8 +387,7 @@ public final class AuthListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInventoryClick(InventoryClickEvent event) {
         if (event.getWhoClicked() instanceof Player player
-                && plugin.getConfig().getBoolean(
-                        "settings.security.block-inventory", true)
+                && securityEnabled("block-inventory")
                 && isBlocked(player)) {
             event.setCancelled(true);
         }
@@ -353,8 +396,7 @@ public final class AuthListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInventoryDrag(InventoryDragEvent event) {
         if (event.getWhoClicked() instanceof Player player
-                && plugin.getConfig().getBoolean(
-                        "settings.security.block-inventory", true)
+                && securityEnabled("block-inventory")
                 && isBlocked(player)) {
             event.setCancelled(true);
         }
@@ -362,10 +404,88 @@ public final class AuthListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDamage(EntityDamageEvent event) {
-        if (plugin.getConfig().getBoolean(
-                "settings.security.block-damage", true)
+        if (securityEnabled("block-damage")
                 && event.getEntity() instanceof Player player
                 && isBlocked(player)) {
+            event.setCancelled(true);
+        }
+    }
+
+    // Prevent an unauthenticated player from attacking entities.
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onDamageByEntity(EntityDamageByEntityEvent event) {
+        if (event.getDamager() instanceof Player player
+                && isBlocked(player)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onDrop(PlayerDropItemEvent event) {
+        if (isBlocked(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPickup(EntityPickupItemEvent event) {
+        if (event.getEntity() instanceof Player player && isBlocked(player)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onConsume(PlayerItemConsumeEvent event) {
+        if (isBlocked(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onSwapHands(PlayerSwapHandItemsEvent event) {
+        if (isBlocked(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onSneak(PlayerToggleSneakEvent event) {
+        if (isBlocked(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onSprint(PlayerToggleSprintEvent event) {
+        if (isBlocked(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onFish(PlayerFishEvent event) {
+        if (isBlocked(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onShear(PlayerShearEntityEvent event) {
+        if (isBlocked(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBedEnter(PlayerBedEnterEvent event) {
+        if (isBlocked(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onVehicleEnter(VehicleEnterEvent event) {
+        if (event.getEntered() instanceof Player player && isBlocked(player)) {
             event.setCancelled(true);
         }
     }
