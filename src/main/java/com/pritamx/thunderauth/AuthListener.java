@@ -20,12 +20,21 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.scheduler.BukkitTask;
+
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class AuthListener implements Listener {
 
     private final ThunderAuth plugin;
     private final AuthManager authManager;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
+
+    private final Map<UUID, BukkitTask> authTasks =
+            new ConcurrentHashMap<>();
 
     public AuthListener(ThunderAuth plugin, AuthManager authManager) {
         this.plugin = plugin;
@@ -54,8 +63,10 @@ public final class AuthListener implements Listener {
 
                     if (Boolean.TRUE.equals(registered)) {
                         showLoginPrompt(player);
+                        startAuthTimer(player, true);
                     } else {
                         showRegisterPrompt(player);
+                        startAuthTimer(player, false);
                     }
                 })
         );
@@ -98,6 +109,107 @@ public final class AuthListener implements Listener {
                         miniMessage.deserialize(subtitle)
                 )
         );
+    }
+
+    private void startAuthTimer(Player player, boolean login) {
+        UUID uuid = player.getUniqueId();
+
+        cancelAuthTimer(uuid);
+
+        String section = login ? "settings.login" : "settings.register";
+
+        int timeout = Math.max(0,
+                plugin.getConfig().getInt(section + ".timeout-seconds", 60));
+
+        if (timeout <= 0) {
+            return;
+        }
+
+        int reminderInterval = Math.max(1,
+                plugin.getConfig().getInt(
+                        "presentation.reminders.interval-seconds", 10
+                ));
+
+        int[] remaining = {timeout};
+
+        BukkitTask task = Bukkit.getScheduler().runTaskTimer(
+                plugin,
+                () -> {
+                    if (!player.isOnline()
+                            || authManager.isAuthenticated(player)) {
+                        cancelAuthTimer(uuid);
+                        return;
+                    }
+
+                    if (remaining[0] <= 0) {
+                        cancelAuthTimer(uuid);
+
+                        String path = login
+                                ? "authentication.login.timeout"
+                                : "authentication.register.timeout";
+
+                        String prefix = plugin.getMessages()
+                                .getString("prefix", "");
+
+                        String message = plugin.getMessages()
+                                .getString(path, "<red>Authentication timed out.");
+
+                        player.kick(miniMessage.deserialize(prefix + message));
+                        return;
+                    }
+
+                    if (plugin.getConfig().getBoolean(
+                            "presentation.actionbar.enabled", true)) {
+
+                        String actionPath = login
+                                ? "presentation.actionbar.login"
+                                : "presentation.actionbar.register";
+
+                        String actionMessage = plugin.getConfig()
+                                .getString(actionPath, "");
+
+                        actionMessage = actionMessage.replace(
+                                "{time}", String.valueOf(remaining[0])
+                        );
+
+                        player.sendActionBar(
+                                miniMessage.deserialize(actionMessage)
+                        );
+                    }
+
+                    if (plugin.getConfig().getBoolean(
+                            "presentation.reminders.enabled", true)
+                            && remaining[0] % reminderInterval == 0) {
+
+                        String reminderPath = login
+                                ? "presentation.reminders.login"
+                                : "presentation.reminders.register";
+
+                        String reminder = plugin.getConfig()
+                                .getString(reminderPath, "");
+
+                        if (!reminder.isEmpty()) {
+                            player.sendMessage(
+                                    miniMessage.deserialize(reminder)
+                            );
+                        }
+                    }
+
+                    remaining[0]--;
+                },
+                0L,
+                20L
+        );
+
+        authTasks.put(uuid, task);
+    }
+
+    private void cancelAuthTimer(UUID uuid) {
+        BukkitTask task = authTasks.remove(uuid);
+
+        if (task != null) {
+            task.cancel();
+        }
     }
 
     private void send(Player player, String path) {
@@ -149,7 +261,7 @@ public final class AuthListener implements Listener {
         }
 
         String command = event.getMessage()
-                .toLowerCase(java.util.Locale.ROOT)
+                .toLowerCase(Locale.ROOT)
                 .split("\\s+", 2)[0];
 
         if (command.equals("/login")
@@ -241,6 +353,9 @@ public final class AuthListener implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        authManager.removeAuthenticated(event.getPlayer());
+        Player player = event.getPlayer();
+
+        cancelAuthTimer(player.getUniqueId());
+        authManager.removeAuthenticated(player);
     }
 }
