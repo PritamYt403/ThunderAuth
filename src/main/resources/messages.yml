@@ -1,0 +1,63 @@
+# ==========================================
+#              ThunderAuth
+#              Messages
+# ==========================================
+
+prefix: "<#FFB900>FIREMC <dark_gray>» "
+
+general:
+  players-only: "<red>This command can only be used by players."
+  no-permission: "<red>You don't have permission to use this command."
+  unknown-command: "<red>Unknown ThunderAuth command."
+  player-not-found: "<red>Player not found."
+  reloaded: "<green>ThunderAuth configuration reloaded."
+  database-error: "<red>A database error occurred. Please contact an administrator."
+
+authentication:
+
+  login:
+    required: "<red>You must login before playing."
+    usage: "<white>Usage: <#FFB900>/login <password>"
+    success: "<green>You have successfully logged in!"
+    already-logged-in: "<yellow>You are already logged in."
+    incorrect-password: "<red>Incorrect password. Attempts remaining: <#FFB900>{attempts}"
+    account-not-registered: "<red>This account is not registered."
+    timeout: "<red>Login time expired."
+    max-attempts: "<red>Maximum login attempts reached."
+
+  register:
+    usage: "<white>Usage: <#FFB900>/register <password> <confirm-password>"
+    success: "<green>Your account has been successfully registered!"
+    already-registered: "<red>You already have an account."
+    password-mismatch: "<red>Passwords do not match."
+    password-too-short: "<red>Password is too short. Minimum: {min} characters."
+    password-too-long: "<red>Password is too long. Maximum: {max} characters."
+    timeout: "<red>Registration time expired."
+
+  password:
+    usage: "<white>Usage: <#FFB900>/changepass <old-password> <new-password>"
+    success: "<green>Your password has been changed successfully!"
+    incorrect-old-password: "<red>Your current password is incorrect."
+
+session:
+  expired: "<yellow>Your login session has expired. Please login again."
+  restored: "<green>Your login session has been restored."
+
+security:
+  movement-blocked: "<red>You cannot move before authentication."
+  chat-blocked: "<red>You cannot chat before authentication."
+  command-blocked: "<red>You cannot use this command before authentication."
+  interaction-blocked: "<red>You cannot interact before authentication."
+
+announcements:
+  login: "<#FFB900>FIREMC <white>» {player} logged in."
+  register: "<#FFB900>FIREMC <white>» {player} registered."
+
+license:
+  checking: "<yellow>Checking ThunderAuth license..."
+  valid: "<green>License successfully validated."
+  invalid: "<red>Invalid license."
+  expired: "<red>Your ThunderAuth license has expired."
+  revoked: "<red>Your ThunderAuth license has been revoked."
+  connection-error: "<red>Unable to verify license."
+  missing: "<red>ThunderAuth license is missing."
