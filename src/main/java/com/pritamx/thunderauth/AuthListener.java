@@ -60,7 +60,15 @@ public final class AuthListener implements Listener {
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        authManager.removeAuthenticated(player);
+
+        // Restore session if the player reconnects before expiry.
+        if (authManager.restoreSession(player)) {
+            plugin.getLogger().info(
+                    "Restored authentication session for "
+                            + player.getName()
+            );
+            return;
+        }
 
         authManager.isRegistered(player).whenComplete((registered, error) -> {
             if (!plugin.isEnabled()) {
@@ -271,7 +279,7 @@ public final class AuthListener implements Listener {
         );
     }
 
-    // Movement lock: blocks exact position changes, but allows camera rotation.
+    // Blocks position changes but allows camera rotation.
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent event) {
         if (!securityEnabled("block-movement")
@@ -296,7 +304,6 @@ public final class AuthListener implements Listener {
         }
     }
 
-    // Explicitly blocks teleportation and portals before authentication.
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onTeleport(PlayerTeleportEvent event) {
         if (plugin.getConfig().getBoolean(
@@ -324,10 +331,18 @@ public final class AuthListener implements Listener {
                 .toLowerCase(Locale.ROOT)
                 .split("\\s+", 2)[0];
 
-        if (command.equals("/login")
-                || command.equals("/register")
-                || command.equals("/reg")
-                || command.equals("/log")) {
+        // Allow only authentication commands, including namespaced forms.
+        String normalized = command;
+        int namespaceSeparator = normalized.indexOf(':');
+
+        if (namespaceSeparator >= 0) {
+            normalized = normalized.substring(namespaceSeparator + 1);
+        }
+
+        if (normalized.equals("/login")
+                || normalized.equals("/register")
+                || normalized.equals("/reg")
+                || normalized.equals("/log")) {
             return;
         }
 
@@ -411,7 +426,6 @@ public final class AuthListener implements Listener {
         }
     }
 
-    // Prevent an unauthenticated player from attacking entities.
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDamageByEntity(EntityDamageByEntityEvent event) {
         if (event.getDamager() instanceof Player player
@@ -490,6 +504,17 @@ public final class AuthListener implements Listener {
         }
     }
 
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        Player player = event.getPlayer();
+
+        cancelAuthTimer(player.getUniqueId());
+        bossBarManager.remove(player);
+
+        // Preserve the session in memory if configured and not expired.
+        authManager.removeAuthenticated(player);
+    }
+
     public void shutdown() {
         for (BukkitTask task : authTasks.values()) {
             task.cancel();
@@ -497,14 +522,5 @@ public final class AuthListener implements Listener {
 
         authTasks.clear();
         bossBarManager.removeAll();
-    }
-
-    @EventHandler
-    public void onQuit(PlayerQuitEvent event) {
-        Player player = event.getPlayer();
-
-        cancelAuthTimer(player.getUniqueId());
-        bossBarManager.remove(player);
-        authManager.removeAuthenticated(player);
     }
 }
