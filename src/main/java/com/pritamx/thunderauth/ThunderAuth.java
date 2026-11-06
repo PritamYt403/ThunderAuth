@@ -1,9 +1,11 @@
-
 package com.pritamx.thunderauth;
 
 import org.bukkit.Bukkit;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.SQLException;
@@ -14,11 +16,16 @@ public final class ThunderAuth extends JavaPlugin {
 
     private AccountStore accountStore;
     private AuthManager authManager;
+
+    private File messagesFile;
+    private FileConfiguration messages;
+
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        loadMessages();
 
         getLogger().info("Starting ThunderAuth...");
         getLogger().info("Checking license before opening account database...");
@@ -52,6 +59,20 @@ public final class ThunderAuth extends JavaPlugin {
         );
     }
 
+    private void loadMessages() {
+        if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
+            throw new IllegalStateException("Could not create plugin data folder.");
+        }
+
+        messagesFile = new File(getDataFolder(), "messages.yml");
+
+        if (!messagesFile.exists()) {
+            saveResource("messages.yml", false);
+        }
+
+        messages = YamlConfiguration.loadConfiguration(messagesFile);
+    }
+
     private void initializeAccountDatabase() {
         try {
             String databaseName = getConfig().getString(
@@ -68,9 +89,14 @@ public final class ThunderAuth extends JavaPlugin {
 
             authManager = new AuthManager(this, accountStore);
 
+            getServer().getPluginManager().registerEvents(
+                    new AuthListener(this, authManager),
+                    this
+            );
+
         } catch (SQLException | IOException exception) {
             getLogger().log(Level.SEVERE,
-                    "Could not initialize the account database!", exception);
+                    "Could not initialize ThunderAuth!", exception);
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
@@ -79,8 +105,28 @@ public final class ThunderAuth extends JavaPlugin {
         getLogger().info(" ThunderAuth initialized!");
         getLogger().info(" License: Valid");
         getLogger().info(" Database: SQLite");
+        getLogger().info(" Messages: Loaded");
+        getLogger().info(" Authentication Listener: Registered");
         getLogger().info(" Version: " + getDescription().getVersion());
         getLogger().info("--------------------------------");
+    }
+
+    public FileConfiguration getMessages() {
+        return messages;
+    }
+
+    public void reloadMessages() {
+        if (messagesFile != null) {
+            messages = YamlConfiguration.loadConfiguration(messagesFile);
+        }
+    }
+
+    public AccountStore getAccountStore() {
+        return accountStore;
+    }
+
+    public AuthManager getAuthManager() {
+        return authManager;
     }
 
     @Override
@@ -106,18 +152,11 @@ public final class ThunderAuth extends JavaPlugin {
             getLogger().info("Account database closed successfully.");
 
         } catch (SQLException | IOException exception) {
-            getLogger().log(Level.SEVERE, "Database shutdown error!", exception);
+            getLogger().log(Level.SEVERE,
+                    "Database shutdown error!", exception);
         } finally {
             accountStore = null;
             authManager = null;
         }
-    }
-
-    public AccountStore getAccountStore() {
-        return accountStore;
-    }
-
-    public AuthManager getAuthManager() {
-        return authManager;
     }
 }
