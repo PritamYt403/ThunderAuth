@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -46,6 +47,17 @@ public final class AuthManager {
     }
 
     public String getIdentity(Player player) {
+        FloodgateHook hook = plugin.getFloodgateHook();
+
+        if (hook != null && hook.isEnabled()) {
+            Optional<String> xuid = hook.getXuid(player);
+
+            if (xuid.isPresent()) {
+                return "BEDROCK:" + xuid.get();
+            }
+        }
+
+        // Keep the original Java UUID format for existing accounts.
         return player.getUniqueId().toString();
     }
 
