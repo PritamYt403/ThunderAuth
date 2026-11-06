@@ -31,6 +31,7 @@ public final class AuthListener implements Listener {
 
     private final ThunderAuth plugin;
     private final AuthManager authManager;
+    private final BossBarManager bossBarManager;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
 
     private final Map<UUID, BukkitTask> authTasks =
@@ -39,6 +40,7 @@ public final class AuthListener implements Listener {
     public AuthListener(ThunderAuth plugin, AuthManager authManager) {
         this.plugin = plugin;
         this.authManager = authManager;
+        this.bossBarManager = new BossBarManager(plugin);
     }
 
     @EventHandler
@@ -115,6 +117,7 @@ public final class AuthListener implements Listener {
         UUID uuid = player.getUniqueId();
 
         cancelAuthTimer(uuid);
+        bossBarManager.remove(player);
 
         String section = login ? "settings.login" : "settings.register";
 
@@ -132,17 +135,21 @@ public final class AuthListener implements Listener {
 
         int[] remaining = {timeout};
 
+        bossBarManager.show(player, login, timeout);
+
         BukkitTask task = Bukkit.getScheduler().runTaskTimer(
                 plugin,
                 () -> {
                     if (!player.isOnline()
                             || authManager.isAuthenticated(player)) {
                         cancelAuthTimer(uuid);
+                        bossBarManager.remove(player);
                         return;
                     }
 
                     if (remaining[0] <= 0) {
                         cancelAuthTimer(uuid);
+                        bossBarManager.remove(player);
 
                         String path = login
                                 ? "authentication.login.timeout"
@@ -157,6 +164,13 @@ public final class AuthListener implements Listener {
                         player.kick(miniMessage.deserialize(prefix + message));
                         return;
                     }
+
+                    bossBarManager.update(
+                            player,
+                            login,
+                            remaining[0],
+                            timeout
+                    );
 
                     if (plugin.getConfig().getBoolean(
                             "presentation.actionbar.enabled", true)) {
@@ -356,6 +370,7 @@ public final class AuthListener implements Listener {
         Player player = event.getPlayer();
 
         cancelAuthTimer(player.getUniqueId());
+        bossBarManager.remove(player);
         authManager.removeAuthenticated(player);
     }
 }
