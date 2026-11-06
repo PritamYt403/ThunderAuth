@@ -1,3 +1,4 @@
+
 package com.pritamx.thunderauth;
 
 import org.bukkit.Bukkit;
@@ -6,6 +7,7 @@ import org.bukkit.entity.Player;
 
 import java.security.GeneralSecurityException;
 import java.sql.SQLException;
+import java.util.Arrays;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -44,16 +46,13 @@ public final class AuthManager {
     }
 
     public CompletableFuture<Boolean> isRegistered(Player player) {
-
         CompletableFuture<Boolean> future = new CompletableFuture<>();
 
         String identity = getIdentity(player);
 
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
-                boolean registered =
-                        accountStore.isRegistered(identity);
-
+                boolean registered = accountStore.isRegistered(identity);
                 future.complete(registered);
 
             } catch (SQLException exception) {
@@ -68,36 +67,28 @@ public final class AuthManager {
             Player player,
             char[] password
     ) {
-
         CompletableFuture<Boolean> future = new CompletableFuture<>();
 
         String identity = getIdentity(player);
         char[] passwordCopy = password.clone();
 
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-
             try {
                 boolean valid = accountStore.verifyPassword(
                         identity,
                         passwordCopy
                 );
 
+                if (valid) {
+                    accountStore.updateLastLogin(identity);
+                }
+
                 Bukkit.getScheduler().runTask(plugin, () -> {
-
                     if (valid && player.isOnline()) {
-
-                        try {
-                            accountStore.updateLastLogin(identity);
-                            setAuthenticated(player);
-
-                        } catch (SQLException exception) {
-                            future.completeExceptionally(exception);
-                            return;
-                        }
+                        setAuthenticated(player);
                     }
 
                     future.complete(valid);
-
                 });
 
             } catch (SQLException | GeneralSecurityException exception) {
@@ -106,7 +97,7 @@ public final class AuthManager {
                 );
 
             } finally {
-                java.util.Arrays.fill(passwordCopy, '\0');
+                Arrays.fill(passwordCopy, '\0');
             }
         });
 
@@ -117,7 +108,6 @@ public final class AuthManager {
             Player player,
             char[] password
     ) {
-
         CompletableFuture<Boolean> future = new CompletableFuture<>();
 
         String identity = getIdentity(player);
@@ -139,7 +129,6 @@ public final class AuthManager {
         char[] passwordCopy = password.clone();
 
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-
             try {
                 boolean registered = accountStore.register(
                         identity,
@@ -154,23 +143,20 @@ public final class AuthManager {
                 );
 
                 Bukkit.getScheduler().runTask(plugin, () -> {
-
                     if (registered && player.isOnline()) {
                         setAuthenticated(player);
                     }
 
                     future.complete(registered);
-
                 });
 
             } catch (SQLException | GeneralSecurityException exception) {
-
                 Bukkit.getScheduler().runTask(plugin, () ->
                         future.completeExceptionally(exception)
                 );
 
             } finally {
-                java.util.Arrays.fill(passwordCopy, '\0');
+                Arrays.fill(passwordCopy, '\0');
             }
         });
 
@@ -182,7 +168,6 @@ public final class AuthManager {
             char[] oldPassword,
             char[] newPassword
     ) {
-
         CompletableFuture<Boolean> future = new CompletableFuture<>();
 
         String identity = getIdentity(player);
@@ -191,7 +176,6 @@ public final class AuthManager {
         char[] newCopy = newPassword.clone();
 
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-
             try {
                 boolean changed = accountStore.changePassword(
                         identity,
@@ -204,14 +188,13 @@ public final class AuthManager {
                 );
 
             } catch (SQLException | GeneralSecurityException exception) {
-
                 Bukkit.getScheduler().runTask(plugin, () ->
                         future.completeExceptionally(exception)
                 );
 
             } finally {
-                java.util.Arrays.fill(oldCopy, '\0');
-                java.util.Arrays.fill(newCopy, '\0');
+                Arrays.fill(oldCopy, '\0');
+                Arrays.fill(newCopy, '\0');
             }
         });
 
