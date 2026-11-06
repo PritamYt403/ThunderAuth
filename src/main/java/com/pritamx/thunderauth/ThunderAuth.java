@@ -1,6 +1,8 @@
+
 package com.pritamx.thunderauth;
 
 import org.bukkit.Bukkit;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -61,7 +63,9 @@ public final class ThunderAuth extends JavaPlugin {
 
     private void loadMessages() {
         if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
-            throw new IllegalStateException("Could not create plugin data folder.");
+            throw new IllegalStateException(
+                    "Could not create plugin data folder."
+            );
         }
 
         messagesFile = new File(getDataFolder(), "messages.yml");
@@ -84,19 +88,29 @@ public final class ThunderAuth extends JavaPlugin {
             }
 
             accountStore = new AccountStore(
-                    getDataFolder().toPath(), databaseName
+                    getDataFolder().toPath(),
+                    databaseName
             );
 
             authManager = new AuthManager(this, accountStore);
+
+            AuthCommands commands = new AuthCommands(this, authManager);
+
+            registerCommand("login", commands);
+            registerCommand("log", commands);
+            registerCommand("register", commands);
+            registerCommand("changepass", commands);
+            registerCommand("thunderauth", commands);
 
             getServer().getPluginManager().registerEvents(
                     new AuthListener(this, authManager),
                     this
             );
 
-        } catch (SQLException | IOException exception) {
+        } catch (SQLException | IOException | IllegalStateException exception) {
             getLogger().log(Level.SEVERE,
                     "Could not initialize ThunderAuth!", exception);
+
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
@@ -106,9 +120,22 @@ public final class ThunderAuth extends JavaPlugin {
         getLogger().info(" License: Valid");
         getLogger().info(" Database: SQLite");
         getLogger().info(" Messages: Loaded");
+        getLogger().info(" Commands: Registered");
         getLogger().info(" Authentication Listener: Registered");
         getLogger().info(" Version: " + getDescription().getVersion());
         getLogger().info("--------------------------------");
+    }
+
+    private void registerCommand(String name, AuthCommands executor) {
+        PluginCommand command = getCommand(name);
+
+        if (command == null) {
+            throw new IllegalStateException(
+                    "Command missing from plugin.yml: " + name
+            );
+        }
+
+        command.setExecutor(executor);
     }
 
     public FileConfiguration getMessages() {
