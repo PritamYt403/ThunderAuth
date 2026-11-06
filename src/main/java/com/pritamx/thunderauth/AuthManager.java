@@ -8,6 +8,7 @@ import org.bukkit.entity.Player;
 import java.security.GeneralSecurityException;
 import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -20,6 +21,9 @@ public final class AuthManager {
 
     private final Set<UUID> authenticatedPlayers =
             ConcurrentHashMap.newKeySet();
+
+    private final Map<UUID, Integer> loginAttempts =
+            new ConcurrentHashMap<>();
 
     public AuthManager(
             ThunderAuth plugin,
@@ -43,6 +47,24 @@ public final class AuthManager {
 
     public String getIdentity(Player player) {
         return player.getUniqueId().toString();
+    }
+
+    public int recordFailedLogin(Player player, int maxAttempts) {
+        int attempts = loginAttempts.merge(
+                player.getUniqueId(),
+                1,
+                Integer::sum
+        );
+
+        return Math.max(0, maxAttempts - attempts);
+    }
+
+    public void resetLoginAttempts(Player player) {
+        loginAttempts.remove(player.getUniqueId());
+    }
+
+    public void clearLoginAttempts(Player player) {
+        loginAttempts.remove(player.getUniqueId());
     }
 
     public CompletableFuture<Boolean> isRegistered(Player player) {
@@ -86,6 +108,7 @@ public final class AuthManager {
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     if (valid && player.isOnline()) {
                         setAuthenticated(player);
+                        resetLoginAttempts(player);
                     }
 
                     future.complete(valid);
@@ -207,5 +230,6 @@ public final class AuthManager {
 
     public void clearAuthenticatedPlayers() {
         authenticatedPlayers.clear();
+        loginAttempts.clear();
     }
 }
