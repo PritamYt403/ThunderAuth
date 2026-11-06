@@ -2,7 +2,6 @@
 package com.pritamx.thunderauth;
 
 import net.kyori.adventure.bossbar.BossBar;
-import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.entity.Player;
 
@@ -22,8 +21,7 @@ public final class BossBarManager {
     }
 
     public void show(Player player, boolean login, int totalSeconds) {
-        if (!plugin.getConfig().getBoolean(
-                "presentation.enabled", true)
+        if (!plugin.getConfig().getBoolean("presentation.enabled", true)
                 || !plugin.getConfig().getBoolean(
                 "presentation.bossbar.enabled", true)) {
             return;
@@ -51,13 +49,11 @@ public final class BossBarManager {
                 )
         );
 
-        float progress = totalSeconds > 0 ? 1.0f : 0.0f;
-
         BossBar bar = BossBar.bossBar(
                 miniMessage.deserialize(
                         title.replace("{time}", String.valueOf(totalSeconds))
                 ),
-                progress,
+                1.0f,
                 color,
                 overlay
         );
@@ -66,16 +62,17 @@ public final class BossBarManager {
         player.showBossBar(bar);
     }
 
-    public void update(Player player, int remaining, int total) {
+    public void update(
+            Player player,
+            boolean login,
+            int remaining,
+            int total
+    ) {
         BossBar bar = bars.get(player.getUniqueId());
 
         if (bar == null || !player.isOnline()) {
             return;
         }
-
-        boolean login = plugin.getConfig().getBoolean(
-                "settings.login.enabled", true
-        );
 
         String path = login
                 ? "presentation.bossbar.login.title"
