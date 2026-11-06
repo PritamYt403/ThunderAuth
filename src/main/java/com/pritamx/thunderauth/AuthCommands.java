@@ -9,6 +9,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 import java.util.Arrays;
+import java.util.Locale;
 
 public final class AuthCommands implements CommandExecutor {
 
@@ -28,11 +29,11 @@ public final class AuthCommands implements CommandExecutor {
             String label,
             String[] args
     ) {
-        String name = command.getName().toLowerCase();
+        String name = command.getName().toLowerCase(Locale.ROOT);
 
         switch (name) {
             case "login", "log" -> handleLogin(sender, args);
-            case "register", "reg" -> handleRegister(sender, args);
+            case "register" -> handleRegister(sender, args);
             case "changepass" -> handleChangePassword(sender, args);
             case "thunderauth" -> handleAdmin(sender, args);
             default -> send(sender, "general.unknown-command");
@@ -200,9 +201,15 @@ public final class AuthCommands implements CommandExecutor {
         int min = plugin.getConfig().getInt("settings.password.min-length", 6);
         int max = plugin.getConfig().getInt("settings.password.max-length", 32);
 
-        if (args[1].length() < min || args[1].length() > max) {
+        if (args[1].length() < min) {
             send(player, "authentication.register.password-too-short",
                     "{min}", String.valueOf(min));
+            return;
+        }
+
+        if (args[1].length() > max) {
+            send(player, "authentication.register.password-too-long",
+                    "{max}", String.valueOf(max));
             return;
         }
 
