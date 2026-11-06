@@ -26,6 +26,10 @@ public final class AuthManager {
     private final Map<UUID, Integer> loginAttempts =
             new ConcurrentHashMap<>();
 
+    // In-memory sessions: identity -> expiry timestamp
+    private final Map<String, Long> rememberedSessions =
+            new ConcurrentHashMap<>();
+
     public AuthManager(
             ThunderAuth plugin,
             AccountStore accountStore
@@ -40,10 +44,64 @@ public final class AuthManager {
 
     public void setAuthenticated(Player player) {
         authenticatedPlayers.add(player.getUniqueId());
+        rememberedSessions.remove(getIdentity(player));
     }
 
     public void removeAuthenticated(Player player) {
-        authenticatedPlayers.remove(player.getUniqueId());
+        boolean wasAuthenticated =
+                authenticatedPlayers.remove(player.getUniqueId());
+
+        if (!wasAuthenticated) {
+            return;
+        }
+
+        boolean remember = plugin.getConfig().getBoolean(
+                "settings.session.remember-after-quit", true
+        );
+
+        int timeout = plugin.getConfig().getInt(
+                "settings.session.timeout-seconds", 0
+        );
+
+        if (remember && timeout > 0) {
+            long expiry = System.currentTimeMillis()
+                    + (timeout * 1000L);
+
+            rememberedSessions.put(getIdentity(player), expiry);
+        }
+    }
+
+    public boolean restoreSession(Player player) {
+        if (isAuthenticated(player)) {
+            return true;
+        }
+
+        boolean remember = plugin.getConfig().getBoolean(
+                "settings.session.remember-after-quit", true
+        );
+
+        int timeout = plugin.getConfig().getInt(
+                "settings.session.timeout-seconds", 0
+        );
+
+        if (!remember || timeout <= 0) {
+            return false;
+        }
+
+        String identity = getIdentity(player);
+        Long expiry = rememberedSessions.get(identity);
+
+        if (expiry == null) {
+            return false;
+        }
+
+        if (System.currentTimeMillis() >= expiry) {
+            rememberedSessions.remove(identity);
+            return false;
+        }
+
+        authenticatedPlayers.add(player.getUniqueId());
+        return true;
     }
 
     public String getIdentity(Player player) {
@@ -57,7 +115,6 @@ public final class AuthManager {
             }
         }
 
-        // Keep the original Java UUID format for existing accounts.
         return player.getUniqueId().toString();
     }
 
@@ -88,7 +145,6 @@ public final class AuthManager {
             try {
                 boolean registered = accountStore.isRegistered(identity);
                 future.complete(registered);
-
             } catch (SQLException exception) {
                 future.completeExceptionally(exception);
             }
@@ -130,7 +186,6 @@ public final class AuthManager {
                 Bukkit.getScheduler().runTask(plugin, () ->
                         future.completeExceptionally(exception)
                 );
-
             } finally {
                 Arrays.fill(passwordCopy, '\0');
             }
@@ -189,7 +244,6 @@ public final class AuthManager {
                 Bukkit.getScheduler().runTask(plugin, () ->
                         future.completeExceptionally(exception)
                 );
-
             } finally {
                 Arrays.fill(passwordCopy, '\0');
             }
@@ -226,7 +280,6 @@ public final class AuthManager {
                 Bukkit.getScheduler().runTask(plugin, () ->
                         future.completeExceptionally(exception)
                 );
-
             } finally {
                 Arrays.fill(oldCopy, '\0');
                 Arrays.fill(newCopy, '\0');
@@ -243,5 +296,6 @@ public final class AuthManager {
     public void clearAuthenticatedPlayers() {
         authenticatedPlayers.clear();
         loginAttempts.clear();
+        rememberedSessions.clear();
     }
 }
