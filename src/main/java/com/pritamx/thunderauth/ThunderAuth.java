@@ -19,6 +19,7 @@ public final class ThunderAuth extends JavaPlugin {
     private AccountStore accountStore;
     private AuthManager authManager;
     private AuthListener authListener;
+    private FloodgateHook floodgateHook;
 
     private File messagesFile;
     private FileConfiguration messages;
@@ -95,6 +96,9 @@ public final class ThunderAuth extends JavaPlugin {
                     databaseName
             );
 
+            floodgateHook = new FloodgateHook(this);
+            floodgateHook.setup();
+
             authManager = new AuthManager(this, accountStore);
 
             AuthCommands commands = new AuthCommands(this, authManager);
@@ -125,6 +129,9 @@ public final class ThunderAuth extends JavaPlugin {
         getLogger().info(" License: Valid");
         getLogger().info(" Database: SQLite");
         getLogger().info(" Messages: Loaded");
+        getLogger().info(" Floodgate: "
+                + (floodgateHook != null && floodgateHook.isEnabled()
+                ? "Enabled" : "Disabled / Not Found"));
         getLogger().info(" Commands: Registered");
         getLogger().info(" Authentication Listener: Registered");
         getLogger().info(" Version: " + getDescription().getVersion());
@@ -161,11 +168,14 @@ public final class ThunderAuth extends JavaPlugin {
         return authManager;
     }
 
+    public FloodgateHook getFloodgateHook() {
+        return floodgateHook;
+    }
+
     @Override
     public void onDisable() {
         shuttingDown.set(true);
 
-        // Stop authentication timers and remove BossBars.
         if (authListener != null) {
             authListener.shutdown();
             authListener = null;
@@ -195,6 +205,7 @@ public final class ThunderAuth extends JavaPlugin {
         } finally {
             accountStore = null;
             authManager = null;
+            floodgateHook = null;
         }
     }
 }
