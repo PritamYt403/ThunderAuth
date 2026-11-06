@@ -1,0 +1,71 @@
+name: ThunderAuth
+version: '2026.01'
+main: com.pritamx.thunderauth.ThunderAuth
+api-version: '1.21'
+author: Pritam
+website: https://github.com/PritamYt403/ThunderAuth
+description: Professional Minecraft Authentication System
+
+softdepend:
+  - floodgate
+  - Geyser-Spigot
+
+commands:
+
+  login:
+    description: Login to your account
+    usage: /login <password>
+    permission: thunderauth.login
+
+  register:
+    description: Register a new account
+    usage: /register <password> <confirm-password>
+    aliases:
+      - reg
+    permission: thunderauth.register
+
+  reg:
+    description: Register a new account
+    usage: /reg <password> <confirm-password>
+    permission: thunderauth.register
+
+  log:
+    description: Login to your account
+    usage: /log <password>
+    permission: thunderauth.login
+
+  changepass:
+    description: Change your account password
+    usage: /changepass <old-password> <new-password>
+    aliases:
+      - changepassword
+      - cp
+    permission: thunderauth.password
+
+  reload:
+    description: Reload ThunderAuth configuration
+    usage: /thunderauth:reload
+    permission: thunderauth.admin
+
+  thunderauth:
+    description: ThunderAuth main command
+    usage: /thunderauth <reload>
+    permission: thunderauth.admin
+
+permissions:
+
+  thunderauth.login:
+    description: Allows players to login
+    default: true
+
+  thunderauth.register:
+    description: Allows players to register
+    default: true
+
+  thunderauth.password:
+    description: Allows players to change passwords
+    default: true
+
+  thunderauth.admin:
+    description: Allows administration of ThunderAuth
+    default: op
