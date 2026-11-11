@@ -2,6 +2,7 @@
 package com.pritamx.thunderauth;
 
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -36,6 +37,7 @@ import org.bukkit.event.player.PlayerToggleSprintEvent;
 import org.bukkit.event.vehicle.VehicleEnterEvent;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -51,7 +53,10 @@ public final class AuthListener implements Listener {
     private final Map<UUID, BukkitTask> authTasks =
             new ConcurrentHashMap<>();
 
-    public AuthListener(ThunderAuth plugin, AuthManager authManager) {
+    public AuthListener(
+            ThunderAuth plugin,
+            AuthManager authManager
+    ) {
         this.plugin = plugin;
         this.authManager = authManager;
         this.bossBarManager = new BossBarManager(plugin);
@@ -61,7 +66,6 @@ public final class AuthListener implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
 
-        // Restore session if the player reconnects before expiry.
         if (authManager.restoreSession(player)) {
             plugin.getLogger().info(
                     "Restored authentication session for "
@@ -70,95 +74,149 @@ public final class AuthListener implements Listener {
             return;
         }
 
-        authManager.isRegistered(player).whenComplete((registered, error) -> {
-            if (!plugin.isEnabled()) {
-                return;
-            }
+        authManager.isRegistered(player).whenComplete(
+                (registered, error) -> runOnMain(() -> {
 
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (!player.isOnline() || !plugin.isEnabled()) {
-                    return;
-                }
+                    if (!player.isOnline()) {
+                        return;
+                    }
 
-                if (error != null) {
-                    send(player, "general.database-error");
-                    plugin.getLogger().severe(
-                            "Could not check account status for "
-                                    + player.getName()
-                    );
-                    return;
-                }
+                    if (error != null) {
+                        plugin.getLogger().severe(
+                                "Could not check account status for "
+                                        + player.getName() + ": "
+                                        + error.getMessage()
+                        );
 
-                if (Boolean.TRUE.equals(registered)) {
-                    showLoginPrompt(player);
-                    startAuthTimer(player, true);
-                } else {
-                    showRegisterPrompt(player);
-                    startAuthTimer(player, false);
-                }
-            });
-        });
+                        send(player, "general.database-error");
+
+                        player.kick(
+                                miniMessage.deserialize(
+                                        "<red>Authentication database is temporarily unavailable. Please reconnect later."
+                                )
+                        );
+                        return;
+                    }
+
+                    if (Boolean.TRUE.equals(registered)) {
+                        showLoginPrompt(player);
+                        startAuthTimer(player, true);
+                    } else {
+                        showRegisterPrompt(player);
+                        startAuthTimer(player, false);
+                    }
+                })
+        );
     }
 
     private void showLoginPrompt(Player player) {
         String title = plugin.getConfig().getString(
-                "presentation.titles.login.title", "<gold>FIREMC"
+                "presentation.titles.login.title",
+                "<gold>FIREMC"
         );
+
         String subtitle = plugin.getConfig().getString(
-                "presentation.titles.login.subtitle", "<white>Please login."
+                "presentation.titles.login.subtitle",
+                "<white>Please login."
         );
 
         showTitle(player, title, subtitle);
+
         send(player, "authentication.login.required");
     }
 
     private void showRegisterPrompt(Player player) {
         String title = plugin.getConfig().getString(
-                "presentation.titles.register.title", "<gold>FIREMC"
+                "presentation.titles.register.title",
+                "<gold>FIREMC"
         );
+
         String subtitle = plugin.getConfig().getString(
                 "presentation.titles.register.subtitle",
                 "<white>Please register."
         );
 
         showTitle(player, title, subtitle);
+
         send(player, "authentication.register.usage");
     }
 
-    private void showTitle(Player player, String title, String subtitle) {
-        if (!plugin.getConfig().getBoolean("presentation.enabled", true)
-                || !plugin.getConfig().getBoolean(
-                        "presentation.titles.enabled", true)) {
+    private void showTitle(
+            Player player,
+            String title,
+            String subtitle
+    ) {
+        if (!plugin.getConfig().getBoolean(
+                "presentation.enabled", true
+        )) {
             return;
         }
 
+        if (!plugin.getConfig().getBoolean(
+                "presentation.titles.enabled", true
+        )) {
+            return;
+        }
+
+        int fadeIn = Math.max(
+                0,
+                plugin.getConfig().getInt(
+                        "presentation.titles.fade.fade-in", 10
+                )
+        );
+
+        int fadeOut = Math.max(
+                0,
+                plugin.getConfig().getInt(
+                        "presentation.titles.fade.fade-out", 20
+                )
+        );
+
+        Title.Times times = Title.Times.times(
+                Duration.ofMillis(fadeIn * 50L),
+                Duration.ofMillis(3000L),
+                Duration.ofMillis(fadeOut * 50L)
+        );
+
         player.showTitle(
-                net.kyori.adventure.title.Title.title(
+                Title.title(
                         miniMessage.deserialize(title),
-                        miniMessage.deserialize(subtitle)
+                        miniMessage.deserialize(subtitle),
+                        times
                 )
         );
     }
 
-    private void startAuthTimer(Player player, boolean login) {
+    private void startAuthTimer(
+            Player player,
+            boolean login
+    ) {
         UUID uuid = player.getUniqueId();
 
         cancelAuthTimer(uuid);
         bossBarManager.remove(player);
 
-        String section = login ? "settings.login" : "settings.register";
+        String section = login
+                ? "settings.login"
+                : "settings.register";
 
-        int timeout = Math.max(0,
-                plugin.getConfig().getInt(section + ".timeout-seconds", 60));
+        int timeout = Math.max(
+                0,
+                plugin.getConfig().getInt(
+                        section + ".timeout-seconds", 60
+                )
+        );
 
         if (timeout <= 0) {
             return;
         }
 
-        int reminderInterval = Math.max(1,
+        int reminderInterval = Math.max(
+                1,
                 plugin.getConfig().getInt(
                         "presentation.reminders.interval-seconds", 10
-                ));
+                )
+        );
 
         int[] remaining = {timeout};
 
@@ -167,8 +225,10 @@ public final class AuthListener implements Listener {
         BukkitTask task = Bukkit.getScheduler().runTaskTimer(
                 plugin,
                 () -> {
+
                     if (!player.isOnline()
                             || authManager.isAuthenticated(player)) {
+
                         cancelAuthTimer(uuid);
                         bossBarManager.remove(player);
                         return;
@@ -192,7 +252,9 @@ public final class AuthListener implements Listener {
                                 );
 
                         player.kick(
-                                miniMessage.deserialize(prefix + message)
+                                miniMessage.deserialize(
+                                        prefix + message
+                                )
                         );
                         return;
                     }
@@ -204,42 +266,14 @@ public final class AuthListener implements Listener {
                             timeout
                     );
 
-                    if (plugin.getConfig().getBoolean(
-                            "presentation.actionbar.enabled", true)) {
+                    showActionBar(player, login, remaining[0]);
 
-                        String actionPath = login
-                                ? "presentation.actionbar.login"
-                                : "presentation.actionbar.register";
-
-                        String actionMessage = plugin.getConfig()
-                                .getString(actionPath, "");
-
-                        actionMessage = actionMessage.replace(
-                                "{time}", String.valueOf(remaining[0])
-                        );
-
-                        player.sendActionBar(
-                                miniMessage.deserialize(actionMessage)
-                        );
-                    }
-
-                    if (plugin.getConfig().getBoolean(
-                            "presentation.reminders.enabled", true)
-                            && remaining[0] % reminderInterval == 0) {
-
-                        String reminderPath = login
-                                ? "presentation.reminders.login"
-                                : "presentation.reminders.register";
-
-                        String reminder = plugin.getConfig()
-                                .getString(reminderPath, "");
-
-                        if (!reminder.isEmpty()) {
-                            player.sendMessage(
-                                    miniMessage.deserialize(reminder)
-                            );
-                        }
-                    }
+                    showReminder(
+                            player,
+                            login,
+                            remaining[0],
+                            reminderInterval
+                    );
 
                     remaining[0]--;
                 },
@@ -248,6 +282,87 @@ public final class AuthListener implements Listener {
         );
 
         authTasks.put(uuid, task);
+    }
+
+    private void showActionBar(
+            Player player,
+            boolean login,
+            int remaining
+    ) {
+        if (!plugin.getConfig().getBoolean(
+                "presentation.actionbar.enabled", true
+        )) {
+            return;
+        }
+
+        String path = login
+                ? "presentation.actionbar.login"
+                : "presentation.actionbar.register";
+
+        String message = plugin.getConfig().getString(path, "");
+
+        if (message == null || message.isEmpty()) {
+            return;
+        }
+
+        message = message.replace(
+                "{time}",
+                String.valueOf(remaining)
+        );
+
+        player.sendActionBar(
+                miniMessage.deserialize(message)
+        );
+    }
+
+    private void showReminder(
+            Player player,
+            boolean login,
+            int remaining,
+            int interval
+    ) {
+        if (!plugin.getConfig().getBoolean(
+                "presentation.reminders.enabled", true
+        )) {
+            return;
+        }
+
+        if (remaining % interval != 0) {
+            return;
+        }
+
+        String path = login
+                ? "presentation.reminders.login"
+                : "presentation.reminders.register";
+
+        String message = plugin.getConfig().getString(path, "");
+
+        if (message == null || message.isEmpty()) {
+            return;
+        }
+
+        player.sendMessage(
+                miniMessage.deserialize(message)
+        );
+    }
+
+    private void runOnMain(Runnable action) {
+        if (!plugin.isEnabled()) {
+            return;
+        }
+
+        try {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (plugin.isEnabled()) {
+                    action.run();
+                }
+            });
+        } catch (IllegalStateException exception) {
+            plugin.getLogger().warning(
+                    "Could not schedule authentication task: "
+                            + exception.getMessage()
+            );
+        }
     }
 
     private void cancelAuthTimer(UUID uuid) {
@@ -259,9 +374,13 @@ public final class AuthListener implements Listener {
     }
 
     private void send(Player player, String path) {
-        String prefix = plugin.getMessages().getString("prefix", "");
+        String prefix = plugin.getMessages().getString(
+                "prefix", ""
+        );
+
         String message = plugin.getMessages().getString(
-                path, "<red>Missing message: " + path
+                path,
+                "<red>Missing message: " + path
         );
 
         player.sendMessage(
@@ -275,12 +394,16 @@ public final class AuthListener implements Listener {
 
     private boolean securityEnabled(String setting) {
         return plugin.getConfig().getBoolean(
-                "settings.security." + setting, true
+                "settings.security." + setting,
+                true
         );
     }
 
-    // Blocks position changes but allows camera rotation.
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    // Lock position while allowing camera rotation.
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onMove(PlayerMoveEvent event) {
         if (!securityEnabled("block-movement")
                 || !isBlocked(event.getPlayer())
@@ -298,29 +421,40 @@ public final class AuthListener implements Listener {
 
         if (positionChanged) {
             Location locked = from.clone();
+
             locked.setYaw(to.getYaw());
             locked.setPitch(to.getPitch());
+
             event.setTo(locked);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onTeleport(PlayerTeleportEvent event) {
-        if (plugin.getConfig().getBoolean(
-                "settings.security.prevent-teleport-before-auth", true)
+        if (securityEnabled("prevent-teleport-before-auth")
                 && isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onChat(AsyncPlayerChatEvent event) {
-        if (securityEnabled("block-chat") && isBlocked(event.getPlayer())) {
+        if (securityEnabled("block-chat")
+                && isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onCommand(PlayerCommandPreprocessEvent event) {
         if (!securityEnabled("block-commands")
                 || !isBlocked(event.getPlayer())) {
@@ -331,26 +465,31 @@ public final class AuthListener implements Listener {
                 .toLowerCase(Locale.ROOT)
                 .split("\\s+", 2)[0];
 
-        // Allow only authentication commands, including namespaced forms.
-        String normalized = command;
-        int namespaceSeparator = normalized.indexOf(':');
+        int separator = command.indexOf(':');
 
-        if (namespaceSeparator >= 0) {
-            normalized = normalized.substring(namespaceSeparator + 1);
+        if (separator >= 0) {
+            command = command.substring(separator + 1);
         }
 
-        if (normalized.equals("/login")
-                || normalized.equals("/register")
-                || normalized.equals("/reg")
-                || normalized.equals("/log")) {
+        if (command.equals("/login")
+                || command.equals("/log")
+                || command.equals("/register")
+                || command.equals("/reg")) {
             return;
         }
 
         event.setCancelled(true);
-        send(event.getPlayer(), "security.command-blocked");
+
+        send(
+                event.getPlayer(),
+                "security.command-blocked"
+        );
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onBlockBreak(BlockBreakEvent event) {
         if (securityEnabled("block-block-break")
                 && isBlocked(event.getPlayer())) {
@@ -358,7 +497,10 @@ public final class AuthListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onBlockDamage(BlockDamageEvent event) {
         if (securityEnabled("block-block-break")
                 && isBlocked(event.getPlayer())) {
@@ -366,7 +508,10 @@ public final class AuthListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onBlockPlace(BlockPlaceEvent event) {
         if (securityEnabled("block-block-place")
                 && isBlocked(event.getPlayer())) {
@@ -374,7 +519,10 @@ public final class AuthListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onInteract(PlayerInteractEvent event) {
         if (securityEnabled("block-interactions")
                 && isBlocked(event.getPlayer())) {
@@ -382,7 +530,10 @@ public final class AuthListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onInteractEntity(PlayerInteractEntityEvent event) {
         if (securityEnabled("block-interactions")
                 && isBlocked(event.getPlayer())) {
@@ -390,7 +541,10 @@ public final class AuthListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onInventoryOpen(InventoryOpenEvent event) {
         if (event.getPlayer() instanceof Player player
                 && securityEnabled("block-inventory")
@@ -399,7 +553,10 @@ public final class AuthListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onInventoryClick(InventoryClickEvent event) {
         if (event.getWhoClicked() instanceof Player player
                 && securityEnabled("block-inventory")
@@ -408,7 +565,10 @@ public final class AuthListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onInventoryDrag(InventoryDragEvent event) {
         if (event.getWhoClicked() instanceof Player player
                 && securityEnabled("block-inventory")
@@ -417,7 +577,10 @@ public final class AuthListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onDamage(EntityDamageEvent event) {
         if (securityEnabled("block-damage")
                 && event.getEntity() instanceof Player player
@@ -426,80 +589,116 @@ public final class AuthListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onDamageByEntity(EntityDamageByEntityEvent event) {
-        if (event.getDamager() instanceof Player player
+        if (securityEnabled("block-damage")
+                && event.getDamager() instanceof Player player
                 && isBlocked(player)) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onDrop(PlayerDropItemEvent event) {
         if (isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onPickup(EntityPickupItemEvent event) {
-        if (event.getEntity() instanceof Player player && isBlocked(player)) {
+        if (event.getEntity() instanceof Player player
+                && isBlocked(player)) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onConsume(PlayerItemConsumeEvent event) {
         if (isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onSwapHands(PlayerSwapHandItemsEvent event) {
         if (isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onSneak(PlayerToggleSneakEvent event) {
         if (isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onSprint(PlayerToggleSprintEvent event) {
         if (isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onFish(PlayerFishEvent event) {
         if (isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onShear(PlayerShearEntityEvent event) {
         if (isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onBedEnter(PlayerBedEnterEvent event) {
         if (isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onVehicleEnter(VehicleEnterEvent event) {
-        if (event.getEntered() instanceof Player player && isBlocked(player)) {
+        if (event.getEntered() instanceof Player player
+                && isBlocked(player)) {
             event.setCancelled(true);
         }
     }
@@ -511,7 +710,6 @@ public final class AuthListener implements Listener {
         cancelAuthTimer(player.getUniqueId());
         bossBarManager.remove(player);
 
-        // Preserve the session in memory if configured and not expired.
         authManager.removeAuthenticated(player);
     }
 
