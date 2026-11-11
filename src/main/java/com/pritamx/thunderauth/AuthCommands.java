@@ -20,7 +20,11 @@ public final class AuthCommands implements CommandExecutor {
     private final AuthManager authManager;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
 
-    private final Set<UUID> loginInProgress =
+    /*
+     * One authentication/password operation per player at a time.
+     * This prevents duplicate registration and login races.
+     */
+    private final Set<UUID> operationsInProgress =
             ConcurrentHashMap.newKeySet();
 
     public AuthCommands(ThunderAuth plugin, AuthManager authManager) {
@@ -48,6 +52,23 @@ public final class AuthCommands implements CommandExecutor {
         return true;
     }
 
+    private boolean beginOperation(Player player) {
+        if (player == null) {
+            return false;
+        }
+
+        if (!operationsInProgress.add(player.getUniqueId())) {
+            send(player, "authentication.operation-in-progress");
+            return false;
+        }
+
+        return true;
+    }
+
+    private void endOperation(UUID playerId) {
+        operationsInProgress.remove(playerId);
+    }
+
     private void handleLogin(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             send(sender, "general.players-only");
@@ -59,7 +80,8 @@ public final class AuthCommands implements CommandExecutor {
             return;
         }
 
-        if (!plugin.getConfig().getBoolean("settings.login.enabled", true)) {
+        if (!plugin.getConfig().getBoolean(
+                "settings.login.enabled", true)) {
             send(player, "authentication.login.account-not-registered");
             return;
         }
@@ -69,51 +91,62 @@ public final class AuthCommands implements CommandExecutor {
             return;
         }
 
-        UUID playerId = player.getUniqueId();
-
-        if (!loginInProgress.add(playerId)) {
+        if (!beginOperation(player)) {
             return;
         }
 
+        UUID playerId = player.getUniqueId();
         char[] password = args[0].toCharArray();
 
-        authManager.login(player, password).whenComplete((success, error) ->
-                Bukkit.getScheduler().runTask(plugin, () -> {
+        authManager.login(player, password).whenComplete(
+                (success, error) -> runOnMain(() -> {
                     Arrays.fill(password, '\0');
-                    loginInProgress.remove(playerId);
 
                     if (!player.isOnline()) {
+                        endOperation(playerId);
                         return;
                     }
 
                     if (error != null) {
+                        endOperation(playerId);
+
                         plugin.getLogger().severe(
                                 "Login database operation failed for "
-                                        + player.getName()
+                                        + player.getName() + ": "
+                                        + error.getMessage()
                         );
+
                         send(player, "general.database-error");
                         return;
                     }
 
-                    if (Boolean.TRUE.equals(success)) {
+                    if (Boolean.TRUE.equals(success)
+                            && authManager.isAuthenticated(player)) {
+
+                        endOperation(playerId);
                         send(player, "authentication.login.success");
                         return;
                     }
 
-                    int maxAttempts = Math.max(1,
+                    int maxAttempts = Math.max(
+                            1,
                             plugin.getConfig().getInt(
                                     "settings.login.max-attempts", 5
                             )
                     );
 
                     int remaining = authManager.recordFailedLogin(
-                            player, maxAttempts
+                            player,
+                            maxAttempts
                     );
+
+                    endOperation(playerId);
 
                     if (remaining <= 0) {
                         kick(player, "authentication.login.max-attempts");
                     } else {
-                        send(player,
+                        send(
+                                player,
                                 "authentication.login.incorrect-password",
                                 "{attempts}",
                                 String.valueOf(remaining)
@@ -134,7 +167,8 @@ public final class AuthCommands implements CommandExecutor {
             return;
         }
 
-        if (!plugin.getConfig().getBoolean("settings.register.enabled", true)) {
+        if (!plugin.getConfig().getBoolean(
+                "settings.register.enabled", true)) {
             send(player, "authentication.register.usage");
             return;
         }
@@ -152,73 +186,131 @@ public final class AuthCommands implements CommandExecutor {
         int min = plugin.getConfig().getInt(
                 "settings.password.min-length", 6
         );
+
         int max = plugin.getConfig().getInt(
                 "settings.password.max-length", 32
         );
 
+        if (min < 1 || max < min) {
+            plugin.getLogger().severe(
+                    "Invalid password length configuration."
+            );
+            send(player, "general.database-error");
+            return;
+        }
+
         if (args[0].length() < min) {
-            send(player, "authentication.register.password-too-short",
-                    "{min}", String.valueOf(min));
+            send(
+                    player,
+                    "authentication.register.password-too-short",
+                    "{min}",
+                    String.valueOf(min)
+            );
             return;
         }
 
         if (args[0].length() > max) {
-            send(player, "authentication.register.password-too-long",
-                    "{max}", String.valueOf(max));
+            send(
+                    player,
+                    "authentication.register.password-too-long",
+                    "{max}",
+                    String.valueOf(max)
+            );
             return;
         }
 
+        if (!beginOperation(player)) {
+            return;
+        }
+
+        UUID playerId = player.getUniqueId();
         char[] password = args[0].toCharArray();
 
-        authManager.isRegistered(player).whenComplete((registered, checkError) ->
-                Bukkit.getScheduler().runTask(plugin, () -> {
+        authManager.isRegistered(player).whenComplete(
+                (registered, checkError) -> runOnMain(() -> {
+
                     if (!player.isOnline()) {
                         Arrays.fill(password, '\0');
+                        endOperation(playerId);
                         return;
                     }
 
                     if (checkError != null) {
                         Arrays.fill(password, '\0');
+                        endOperation(playerId);
+
+                        plugin.getLogger().severe(
+                                "Registration account check failed for "
+                                        + player.getName() + ": "
+                                        + checkError.getMessage()
+                        );
+
                         send(player, "general.database-error");
                         return;
                     }
 
                     if (Boolean.TRUE.equals(registered)) {
                         Arrays.fill(password, '\0');
-                        send(player, "authentication.register.already-registered");
+                        endOperation(playerId);
+
+                        send(
+                                player,
+                                "authentication.register.already-registered"
+                        );
                         return;
                     }
 
                     authManager.register(player, password).whenComplete(
-                            (success, error) ->
-                                    Bukkit.getScheduler().runTask(plugin, () -> {
-                                        Arrays.fill(password, '\0');
+                            (success, error) -> runOnMain(() -> {
 
-                                        if (!player.isOnline()) {
-                                            return;
-                                        }
+                                Arrays.fill(password, '\0');
 
-                                        if (error != null) {
-                                            plugin.getLogger().severe(
-                                                    "Registration failed for "
-                                                            + player.getName()
-                                            );
-                                            send(player, "general.database-error");
-                                            return;
-                                        }
+                                if (!player.isOnline()) {
+                                    endOperation(playerId);
+                                    return;
+                                }
 
-                                        if (Boolean.TRUE.equals(success)) {
-                                            send(player, "authentication.register.success");
-                                        } else {
-                                            send(player, "authentication.register.already-registered");
-                                        }
-                                    })
+                                if (error != null) {
+                                    endOperation(playerId);
+
+                                    plugin.getLogger().severe(
+                                            "Registration failed for "
+                                                    + player.getName() + ": "
+                                                    + error.getMessage()
+                                    );
+
+                                    send(player, "general.database-error");
+                                    return;
+                                }
+
+                                if (Boolean.TRUE.equals(success)
+                                        && authManager.isAuthenticated(player)) {
+
+                                    endOperation(playerId);
+
+                                    send(
+                                            player,
+                                            "authentication.register.success"
+                                    );
+                                    return;
+                                }
+
+                                endOperation(playerId);
+
+                                send(
+                                        player,
+                                        "authentication.register.already-registered"
+                                );
+                            })
                     );
                 })
         );
     }
 
-    private void handleChangePassword(CommandSender sender, String[] args) {
+    private void handleChangePassword(
+            CommandSender sender,
+            String[] args
+    ) {
         if (!(sender instanceof Player player)) {
             send(sender, "general.players-only");
             return;
@@ -237,44 +329,79 @@ public final class AuthCommands implements CommandExecutor {
         int min = plugin.getConfig().getInt(
                 "settings.password.min-length", 6
         );
+
         int max = plugin.getConfig().getInt(
                 "settings.password.max-length", 32
         );
 
+        if (min < 1 || max < min) {
+            send(player, "general.database-error");
+            return;
+        }
+
         if (args[1].length() < min) {
-            send(player, "authentication.register.password-too-short",
-                    "{min}", String.valueOf(min));
+            send(
+                    player,
+                    "authentication.register.password-too-short",
+                    "{min}",
+                    String.valueOf(min)
+            );
             return;
         }
 
         if (args[1].length() > max) {
-            send(player, "authentication.register.password-too-long",
-                    "{max}", String.valueOf(max));
+            send(
+                    player,
+                    "authentication.register.password-too-long",
+                    "{max}",
+                    String.valueOf(max)
+            );
             return;
         }
+
+        if (!beginOperation(player)) {
+            return;
+        }
+
+        UUID playerId = player.getUniqueId();
 
         char[] oldPassword = args[0].toCharArray();
         char[] newPassword = args[1].toCharArray();
 
-        authManager.changePassword(player, oldPassword, newPassword)
-                .whenComplete((changed, error) ->
-                        Bukkit.getScheduler().runTask(plugin, () -> {
-                            Arrays.fill(oldPassword, '\0');
-                            Arrays.fill(newPassword, '\0');
+        authManager.changePassword(
+                player,
+                oldPassword,
+                newPassword
+        ).whenComplete((changed, error) -> runOnMain(() -> {
 
-                            if (!player.isOnline()) {
-                                return;
-                            }
+            Arrays.fill(oldPassword, '\0');
+            Arrays.fill(newPassword, '\0');
 
-                            if (error != null) {
-                                send(player, "general.database-error");
-                            } else if (Boolean.TRUE.equals(changed)) {
-                                send(player, "authentication.password.success");
-                            } else {
-                                send(player, "authentication.password.incorrect-old-password");
-                            }
-                        })
+            endOperation(playerId);
+
+            if (!player.isOnline()) {
+                return;
+            }
+
+            if (error != null) {
+                plugin.getLogger().severe(
+                        "Password change failed for "
+                                + player.getName() + ": "
+                                + error.getMessage()
                 );
+
+                send(player, "general.database-error");
+
+            } else if (Boolean.TRUE.equals(changed)) {
+                send(player, "authentication.password.success");
+
+            } else {
+                send(
+                        player,
+                        "authentication.password.incorrect-old-password"
+                );
+            }
+        }));
     }
 
     private void handleAdmin(CommandSender sender, String[] args) {
@@ -283,9 +410,12 @@ public final class AuthCommands implements CommandExecutor {
             return;
         }
 
-        if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
+        if (args.length == 1
+                && args[0].equalsIgnoreCase("reload")) {
+
             plugin.reloadConfig();
             plugin.reloadMessages();
+
             send(sender, "general.reloaded");
             return;
         }
@@ -293,10 +423,31 @@ public final class AuthCommands implements CommandExecutor {
         send(sender, "general.unknown-command");
     }
 
+    private void runOnMain(Runnable action) {
+        if (!plugin.isEnabled()) {
+            return;
+        }
+
+        try {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (plugin.isEnabled()) {
+                    action.run();
+                }
+            });
+        } catch (IllegalStateException exception) {
+            plugin.getLogger().warning(
+                    "Could not schedule authentication callback: "
+                            + exception.getMessage()
+            );
+        }
+    }
+
     private void kick(Player player, String path) {
         String prefix = plugin.getMessages().getString("prefix", "");
+
         String message = plugin.getMessages().getString(
-                path, "<red>Maximum login attempts reached."
+                path,
+                "<red>Maximum login attempts reached."
         );
 
         player.kick(miniMessage.deserialize(prefix + message));
@@ -313,8 +464,10 @@ public final class AuthCommands implements CommandExecutor {
             String value
     ) {
         String prefix = plugin.getMessages().getString("prefix", "");
+
         String message = plugin.getMessages().getString(
-                path, "<red>Missing message: " + path
+                path,
+                "<red>Missing message: " + path
         );
 
         if (placeholder != null && value != null) {
