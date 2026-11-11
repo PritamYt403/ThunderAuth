@@ -12,121 +12,83 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class BossBarManager {
 
-    private final ThunderAuth plugin;
-    private final MiniMessage miniMessage = MiniMessage.miniMessage();
+    private static final String DEFAULT_TITLE =
+            "<gold>FIREMC <white>» {time}s";
 
-    private final Map<UUID, BossBar> bars =
+    private static final BossBar.Color DEFAULT_COLOR =
+            BossBar.Color.YELLOW;
+
+    private static final BossBar.Overlay DEFAULT_OVERLAY =
+            BossBar.Overlay.PROGRESS;
+
+    private final ThunderAuth plugin;
+    private final MiniMessage miniMessage =
+            MiniMessage.miniMessage();
+
+    private final Map<UUID, BossBar> activeBars =
             new ConcurrentHashMap<>();
 
     public BossBarManager(ThunderAuth plugin) {
         this.plugin = plugin;
     }
 
-    public void show(
-            Player player,
-            boolean login,
-            int totalSeconds
-    ) {
-        if (player == null || !player.isOnline()) {
+    public void show(Player player, boolean login, int totalSeconds) {
+        if (!isPlayerOnline(player)) {
             return;
         }
 
-        if (!plugin.getConfig().getBoolean(
-                "presentation.enabled", true
-        ) || !plugin.getConfig().getBoolean(
-                "presentation.bossbar.enabled", true
-        )) {
+        if (!isBossBarEnabled()) {
             remove(player);
             return;
         }
 
+        // Remove any previous bar before creating a new one.
         remove(player);
 
-        String path = login
-                ? "presentation.bossbar.login.title"
-                : "presentation.bossbar.register.title";
-
-        String title = getTitle(path);
-
-        BossBar.Color color = getColor(
-                plugin.getConfig().getString(
-                        "presentation.bossbar.color",
-                        "YELLOW"
-                )
-        );
-
-        BossBar.Overlay overlay = getOverlay(
-                plugin.getConfig().getString(
-                        "presentation.bossbar.style",
-                        "PROGRESS"
-                )
-        );
-
-        float progress = totalSeconds <= 0
-                ? 0.0f
-                : 1.0f;
+        String title = getAuthenticationTitle(login);
+        String formattedTitle = formatTitle(title, totalSeconds);
 
         BossBar bar = BossBar.bossBar(
-                miniMessage.deserialize(
-                        title.replace(
-                                "{time}",
-                                String.valueOf(Math.max(0, totalSeconds))
-                        )
-                ),
-                progress,
-                color,
-                overlay
+                miniMessage.deserialize(formattedTitle),
+                getInitialProgress(totalSeconds),
+                getConfiguredColor(),
+                getConfiguredOverlay()
         );
 
-        bars.put(player.getUniqueId(), bar);
+        activeBars.put(player.getUniqueId(), bar);
         player.showBossBar(bar);
     }
 
     public void update(
             Player player,
             boolean login,
-            int remaining,
-            int total
+            int remainingSeconds,
+            int totalSeconds
     ) {
-        if (player == null || !player.isOnline()) {
+        if (!isPlayerOnline(player)) {
             return;
         }
 
-        BossBar bar = bars.get(player.getUniqueId());
+        BossBar bar = activeBars.get(player.getUniqueId());
 
         if (bar == null) {
             return;
         }
 
-        String path = login
-                ? "presentation.bossbar.login.title"
-                : "presentation.bossbar.register.title";
-
-        String title = getTitle(path);
+        String title = getAuthenticationTitle(login);
 
         bar.name(
                 miniMessage.deserialize(
-                        title.replace(
-                                "{time}",
-                                String.valueOf(Math.max(0, remaining))
-                        )
+                        formatTitle(title, remainingSeconds)
                 )
         );
 
         if (plugin.getConfig().getBoolean(
                 "presentation.bossbar.progress.enabled", true
         )) {
-            float progress = total <= 0
-                    ? 0.0f
-                    : Math.max(
-                            0.0f,
-                            Math.min(
-                                    1.0f,
-                                    (float) remaining / (float) total
-                            )
-                    );
-
-            bar.progress(progress);
+            bar.progress(
+                    calculateProgress(remainingSeconds, totalSeconds)
+            );
         }
     }
 
@@ -135,7 +97,7 @@ public final class BossBarManager {
             return;
         }
 
-        BossBar bar = bars.remove(player.getUniqueId());
+        BossBar bar = activeBars.remove(player.getUniqueId());
 
         if (bar != null && player.isOnline()) {
             player.hideBossBar(bar);
@@ -143,35 +105,85 @@ public final class BossBarManager {
     }
 
     public void removeAll() {
-        for (Map.Entry<UUID, BossBar> entry : bars.entrySet()) {
-            Player player = plugin.getServer().getPlayer(
-                    entry.getKey()
-            );
+        for (Map.Entry<UUID, BossBar> entry : activeBars.entrySet()) {
+            Player player = plugin.getServer().getPlayer(entry.getKey());
 
-            if (player != null && player.isOnline()) {
+            if (isPlayerOnline(player)) {
                 player.hideBossBar(entry.getValue());
             }
         }
 
-        bars.clear();
+        activeBars.clear();
     }
 
-    private String getTitle(String path) {
+    private boolean isPlayerOnline(Player player) {
+        return player != null && player.isOnline();
+    }
+
+    private boolean isBossBarEnabled() {
+        return plugin.getConfig().getBoolean(
+                "presentation.enabled", true
+        ) && plugin.getConfig().getBoolean(
+                "presentation.bossbar.enabled", true
+        );
+    }
+
+    private String getAuthenticationTitle(boolean login) {
+        String path = login
+                ? "presentation.bossbar.login.title"
+                : "presentation.bossbar.register.title";
+
+        return getConfiguredTitle(path);
+    }
+
+    private String getConfiguredTitle(String path) {
         String title = plugin.getConfig().getString(
                 path,
-                "<gold>FIREMC <white>» {time}s"
+                DEFAULT_TITLE
         );
 
-        if (title == null || title.isBlank()) {
-            return "<gold>FIREMC <white>» {time}s";
-        }
-
-        return title;
+        return title == null || title.isBlank()
+                ? DEFAULT_TITLE
+                : title;
     }
 
-    private BossBar.Color getColor(String value) {
+    private String formatTitle(String title, int seconds) {
+        return title.replace(
+                "{time}",
+                String.valueOf(Math.max(0, seconds))
+        );
+    }
+
+    private float getInitialProgress(int totalSeconds) {
+        return totalSeconds <= 0 ? 0.0f : 1.0f;
+    }
+
+    private float calculateProgress(
+            int remainingSeconds,
+            int totalSeconds
+    ) {
+        if (totalSeconds <= 0) {
+            return 0.0f;
+        }
+
+        float progress =
+                (float) remainingSeconds / totalSeconds;
+
+        return Math.max(0.0f, Math.min(1.0f, progress));
+    }
+
+    private BossBar.Color getConfiguredColor() {
+        String value = plugin.getConfig().getString(
+                "presentation.bossbar.color",
+                DEFAULT_COLOR.name()
+        );
+
+        return parseColor(value);
+    }
+
+    private BossBar.Color parseColor(String value) {
         if (value == null || value.isBlank()) {
-            return BossBar.Color.YELLOW;
+            return DEFAULT_COLOR;
         }
 
         try {
@@ -184,13 +196,22 @@ public final class BossBarManager {
                             + "'. Using YELLOW."
             );
 
-            return BossBar.Color.YELLOW;
+            return DEFAULT_COLOR;
         }
     }
 
-    private BossBar.Overlay getOverlay(String value) {
+    private BossBar.Overlay getConfiguredOverlay() {
+        String value = plugin.getConfig().getString(
+                "presentation.bossbar.style",
+                DEFAULT_OVERLAY.name()
+        );
+
+        return parseOverlay(value);
+    }
+
+    private BossBar.Overlay parseOverlay(String value) {
         if (value == null || value.isBlank()) {
-            return BossBar.Overlay.PROGRESS;
+            return DEFAULT_OVERLAY;
         }
 
         try {
@@ -203,7 +224,7 @@ public final class BossBarManager {
                             + "'. Using PROGRESS."
             );
 
-            return BossBar.Overlay.PROGRESS;
+            return DEFAULT_OVERLAY;
         }
     }
 }
