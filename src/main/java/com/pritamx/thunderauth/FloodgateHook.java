@@ -5,6 +5,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Optional;
 import java.util.UUID;
@@ -12,10 +13,13 @@ import java.util.UUID;
 public final class FloodgateHook {
 
     private final ThunderAuth plugin;
+
     private Object floodgateApi;
     private Method getPlayerMethod;
     private Method getXuidMethod;
+
     private boolean enabled;
+    private boolean apiReady;
 
     public FloodgateHook(ThunderAuth plugin) {
         this.plugin = plugin;
@@ -23,11 +27,16 @@ public final class FloodgateHook {
 
     public void setup() {
         enabled = false;
+        apiReady = false;
         floodgateApi = null;
+        getPlayerMethod = null;
+        getXuidMethod = null;
 
         if (!plugin.getConfig().getBoolean(
                 "integrations.floodgate.enabled", true)) {
-            plugin.getLogger().info("Floodgate integration is disabled.");
+            plugin.getLogger().info(
+                    "Floodgate integration is disabled by configuration."
+            );
             return;
         }
 
@@ -36,10 +45,17 @@ public final class FloodgateHook {
 
         if (floodgate == null || !floodgate.isEnabled()) {
             plugin.getLogger().info(
-                    "Floodgate not found. Using Java UUID identity."
+                    "Floodgate not found. Java UUID identity will be used."
             );
             return;
         }
+
+        /*
+         * Floodgate is installed. Keep the integration enabled even
+         * if reflection setup fails, so identity lookup fails closed
+         * instead of silently falling back to a Java UUID.
+         */
+        enabled = true;
 
         try {
             Class<?> apiClass = Class.forName(
@@ -49,7 +65,8 @@ public final class FloodgateHook {
             Object api = apiClass.getMethod("getInstance").invoke(null);
 
             Method playerMethod = apiClass.getMethod(
-                    "getPlayer", UUID.class
+                    "getPlayer",
+                    UUID.class
             );
 
             Class<?> floodgatePlayerClass = Class.forName(
@@ -61,15 +78,20 @@ public final class FloodgateHook {
             floodgateApi = api;
             getPlayerMethod = playerMethod;
             getXuidMethod = xuidMethod;
-            enabled = true;
+            apiReady = true;
 
             plugin.getLogger().info(
                     "Floodgate integration enabled successfully."
             );
 
-        } catch (ReflectiveOperationException exception) {
-            plugin.getLogger().warning(
-                    "Could not hook Floodgate: " + exception.getMessage()
+        } catch (ReflectiveOperationException
+                 | LinkageError exception) {
+
+            plugin.getLogger().severe(
+                    "Floodgate is installed but its API could not be "
+                            + "initialized. Authentication identity lookup "
+                            + "will fail closed. Reason: "
+                            + exception.getMessage()
             );
         }
     }
@@ -78,9 +100,26 @@ public final class FloodgateHook {
         return enabled;
     }
 
+    public boolean isApiReady() {
+        return apiReady;
+    }
+
     public Optional<String> getXuid(Player player) {
-        if (!enabled || floodgateApi == null) {
+        if (player == null) {
+            throw new IllegalArgumentException(
+                    "Player cannot be null."
+            );
+        }
+
+        if (!enabled) {
             return Optional.empty();
+        }
+
+        if (!apiReady || floodgateApi == null
+                || getPlayerMethod == null || getXuidMethod == null) {
+            throw new IllegalStateException(
+                    "Floodgate is installed but its API is unavailable."
+            );
         }
 
         try {
@@ -89,38 +128,71 @@ public final class FloodgateHook {
                     player.getUniqueId()
             );
 
-            if (!(result instanceof Optional<?> optional)
-                    || optional.isEmpty()) {
+            if (!(result instanceof Optional<?> optional)) {
+                throw new IllegalStateException(
+                        "Floodgate returned an unexpected player result."
+                );
+            }
+
+            /*
+             * An empty result means this UUID is not registered
+             * as a Floodgate player, so it can use Java identity.
+             */
+            if (optional.isEmpty()) {
                 return Optional.empty();
             }
 
             Object floodgatePlayer = optional.get();
-            Object xuid = getXuidMethod.invoke(floodgatePlayer);
 
-            if (xuid == null) {
-                return Optional.empty();
+            if (floodgatePlayer == null) {
+                throw new IllegalStateException(
+                        "Floodgate returned a null player."
+                );
             }
 
-            String value = xuid.toString().trim();
+            Object xuidResult = getXuidMethod.invoke(floodgatePlayer);
 
-            return value.isEmpty()
-                    ? Optional.empty()
-                    : Optional.of(value);
+            if (xuidResult == null) {
+                throw new IllegalStateException(
+                        "Floodgate returned a null XUID."
+                );
+            }
 
-        } catch (ReflectiveOperationException exception) {
-            plugin.getLogger().warning(
-                    "Could not read Floodgate XUID for "
-                            + player.getName() + ": "
-                            + exception.getMessage()
+            String xuid = xuidResult.toString().trim();
+
+            if (!xuid.matches("[0-9]{1,20}")) {
+                throw new IllegalStateException(
+                        "Floodgate returned an invalid XUID."
+                );
+            }
+
+            return Optional.of(xuid);
+
+        } catch (IllegalAccessException
+                 | InvocationTargetException
+                 | LinkageError exception) {
+
+            throw new IllegalStateException(
+                    "Could not safely resolve Floodgate identity for "
+                            + player.getName(),
+                    exception
             );
-
-            return Optional.empty();
         }
     }
 
     public String getIdentity(Player player) {
-        return getXuid(player)
-                .map(xuid -> "BEDROCK:" + xuid)
-                .orElse("JAVA:" + player.getUniqueId());
+        if (player == null) {
+            throw new IllegalArgumentException(
+                    "Player cannot be null."
+            );
+        }
+
+        Optional<String> xuid = getXuid(player);
+
+        return xuid
+                .map(value -> "BEDROCK:" + value)
+                .orElseGet(() ->
+                        "JAVA:" + player.getUniqueId()
+                );
     }
 }
