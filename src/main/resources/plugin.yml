@@ -3,8 +3,7 @@ name: ThunderAuth
 version: '2026.01'
 main: com.pritamx.thunderauth.ThunderAuth
 api-version: '1.21'
-author: Pritam
-website: https://github.com/PritamYt403/ThunderAuth
+author: PritamGaming
 description: Professional Minecraft Authentication System
 
 softdepend:
@@ -40,6 +39,16 @@ commands:
   thunderauth:
     description: ThunderAuth main command
     usage: /thunderauth <reload>
+    permission: thunderauth.admin
+
+  setlogspawn:
+    description: Set the login spawn location
+    usage: /setlogspawn
+    permission: thunderauth.admin
+
+  setregspawn:
+    description: Set the registration spawn location
+    usage: /setregspawn
     permission: thunderauth.admin
 
 permissions:
