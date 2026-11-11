@@ -3,6 +3,7 @@ package com.pritamx.thunderauth;
 
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -20,10 +21,6 @@ public final class AuthCommands implements CommandExecutor {
     private final AuthManager authManager;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
 
-    /*
-     * One authentication/password operation per player at a time.
-     * This prevents duplicate registration and login races.
-     */
     private final Set<UUID> operationsInProgress =
             ConcurrentHashMap.newKeySet();
 
@@ -46,6 +43,8 @@ public final class AuthCommands implements CommandExecutor {
             case "register" -> handleRegister(sender, args);
             case "changepass" -> handleChangePassword(sender, args);
             case "thunderauth" -> handleAdmin(sender, args);
+            case "setlogspawn" -> handleSetSpawn(sender, true);
+            case "setregspawn" -> handleSetSpawn(sender, false);
             default -> send(sender, "general.unknown-command");
         }
 
@@ -404,6 +403,46 @@ public final class AuthCommands implements CommandExecutor {
         }));
     }
 
+    private void handleSetSpawn(CommandSender sender, boolean login) {
+        if (!(sender instanceof Player player)) {
+            send(sender, "general.players-only");
+            return;
+        }
+
+        if (!player.hasPermission("thunderauth.admin")) {
+            send(player, "general.no-permission");
+            return;
+        }
+
+        Location location = player.getLocation();
+
+        if (location.getWorld() == null) {
+            send(player, "general.database-error");
+            return;
+        }
+
+        String path = login ? "spawns.login" : "spawns.register";
+
+        plugin.getConfig().set(path + ".enabled", true);
+        plugin.getConfig().set(
+                path + ".world",
+                location.getWorld().getName()
+        );
+        plugin.getConfig().set(path + ".x", location.getX());
+        plugin.getConfig().set(path + ".y", location.getY());
+        plugin.getConfig().set(path + ".z", location.getZ());
+        plugin.getConfig().set(path + ".yaw", location.getYaw());
+        plugin.getConfig().set(path + ".pitch", location.getPitch());
+
+        plugin.saveConfig();
+
+        String message = login
+                ? "<green>Login spawn saved successfully!"
+                : "<green>Registration spawn saved successfully!";
+
+        sendRaw(player, message);
+    }
+
     private void handleAdmin(CommandSender sender, String[] args) {
         if (!sender.hasPermission("thunderauth.admin")) {
             send(sender, "general.no-permission");
@@ -451,6 +490,14 @@ public final class AuthCommands implements CommandExecutor {
         );
 
         player.kick(miniMessage.deserialize(prefix + message));
+    }
+
+    private void sendRaw(CommandSender sender, String message) {
+        String prefix = plugin.getMessages().getString("prefix", "");
+
+        sender.sendMessage(
+                miniMessage.deserialize(prefix + message)
+        );
     }
 
     private void send(CommandSender sender, String path) {
