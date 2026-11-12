@@ -145,7 +145,10 @@ public final class AuthCommands implements CommandExecutor {
                                 plugin.getAuthListener();
 
                         if (listener != null) {
-                            listener.completeAuthentication(player);
+                            listener.completeAuthentication(
+                                    player,
+                                    true
+                            );
                         }
 
                         successSoundManager.play(player, "login");
@@ -351,7 +354,8 @@ public final class AuthCommands implements CommandExecutor {
 
                                     if (listener != null) {
                                         listener.completeAuthentication(
-                                                player
+                                                player,
+                                                false
                                         );
                                     }
 
