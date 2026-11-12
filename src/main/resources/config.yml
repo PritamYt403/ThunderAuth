@@ -167,7 +167,7 @@ spawns:
     enabled: false
 
   return-to-previous-location: true
-  return-to-first-register-location: false
+  return-to-first-register-location: true
 
 # ==========================================
 #              INTEGRATIONS
