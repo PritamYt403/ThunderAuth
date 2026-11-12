@@ -1,9 +1,11 @@
+
 # ==========================================
 #              LICENSE SYSTEM
 # ==========================================
 
 license:
-  key: ""
+  key: "PRITAMGAMING-THUNDERAUTH-001"
+
 # ==========================================
 #             ThunderAuth
 #       Main Configuration File
@@ -11,10 +13,8 @@ license:
 
 config-version: 1
 
-# Server branding
 brand:
   name: "FIREMC"
-
   colors:
     brand: "#FFB900"
     text: "#FFFFFF"
@@ -73,7 +73,6 @@ settings:
 
 presentation:
 
-  # Login and Register use the same design
   enabled: true
 
   titles:
@@ -99,7 +98,6 @@ presentation:
 
   bossbar:
     enabled: true
-
     color: "YELLOW"
     style: "SOLID"
 
@@ -116,7 +114,6 @@ presentation:
   reminders:
     enabled: true
     interval-seconds: 10
-
     login: "<#FFB900>FIREMC <white>» Use <#FFB900>/login <password>"
     register: "<#FFB900>FIREMC <white>» Use <#FFB900>/register <password> <password>"
 
