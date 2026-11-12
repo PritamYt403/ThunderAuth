@@ -206,8 +206,23 @@ public final class AuthListener implements Listener {
     }
 
     /**
+     * Returns the player's original location captured on join.
+     * This is not the authentication spawn location.
+     */
+    public Location getOriginalJoinLocation(Player player) {
+        if (player == null) {
+            return null;
+        }
+
+        Location location = previousLocations.get(
+                player.getUniqueId()
+        );
+
+        return location == null ? null : location.clone();
+    }
+
+    /**
      * Called after a successful login or registration.
-     * AuthCommands will call this method in the next update.
      */
     public void completeAuthentication(Player player) {
         if (player == null || !player.isOnline()) {
