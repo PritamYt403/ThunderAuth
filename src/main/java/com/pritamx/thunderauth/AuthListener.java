@@ -325,6 +325,13 @@ public final class AuthListener implements Listener {
                 )
         );
 
+        int stay = Math.max(
+                0,
+                plugin.getConfig().getInt(
+                        "presentation.titles.fade.stay", 60
+                )
+        );
+
         int fadeOut = Math.max(
                 0,
                 plugin.getConfig().getInt(
@@ -334,7 +341,7 @@ public final class AuthListener implements Listener {
 
         Title.Times times = Title.Times.times(
                 Duration.ofMillis(fadeIn * 50L),
-                Duration.ofMillis(3000L),
+                Duration.ofMillis(stay * 50L),
                 Duration.ofMillis(fadeOut * 50L)
         );
 
