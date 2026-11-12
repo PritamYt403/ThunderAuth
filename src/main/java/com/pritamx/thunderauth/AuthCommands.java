@@ -19,6 +19,7 @@ public final class AuthCommands implements CommandExecutor {
 
     private final ThunderAuth plugin;
     private final AuthManager authManager;
+    private final SuccessSoundManager successSoundManager;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
 
     private final Set<UUID> operationsInProgress =
@@ -30,6 +31,7 @@ public final class AuthCommands implements CommandExecutor {
     ) {
         this.plugin = plugin;
         this.authManager = authManager;
+        this.successSoundManager = new SuccessSoundManager(plugin);
     }
 
     @Override
@@ -145,6 +147,8 @@ public final class AuthCommands implements CommandExecutor {
                         if (listener != null) {
                             listener.completeAuthentication(player);
                         }
+
+                        successSoundManager.play(player, "login");
 
                         send(
                                 player,
@@ -350,6 +354,11 @@ public final class AuthCommands implements CommandExecutor {
                                                 player
                                         );
                                     }
+
+                                    successSoundManager.play(
+                                            player,
+                                            "register"
+                                    );
 
                                     send(
                                             player,
