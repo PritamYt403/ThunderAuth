@@ -150,6 +150,8 @@ public final class AuthCommands implements CommandExecutor {
                                 player,
                                 "authentication.login.success"
                         );
+
+                        broadcastAnnouncement("login", player);
                         return;
                     }
 
@@ -353,6 +355,11 @@ public final class AuthCommands implements CommandExecutor {
                                             player,
                                             "authentication.register.success"
                                     );
+
+                                    broadcastAnnouncement(
+                                            "register",
+                                            player
+                                    );
                                     return;
                                 }
 
@@ -365,6 +372,47 @@ public final class AuthCommands implements CommandExecutor {
                             })
                     );
                 })
+        );
+    }
+
+    // --------------------------------------------------
+    // ANNOUNCEMENTS
+    // --------------------------------------------------
+
+    private void broadcastAnnouncement(
+            String type,
+            Player player
+    ) {
+        if (type == null || player == null) {
+            return;
+        }
+
+        String enabledPath = "announcements." + type + ".enabled";
+
+        if (!plugin.getConfig().getBoolean(
+                enabledPath, true
+        )) {
+            return;
+        }
+
+        String messagePath = "announcements." + type;
+
+        String message = plugin.getMessages().getString(
+                messagePath,
+                ""
+        );
+
+        if (message == null || message.isBlank()) {
+            return;
+        }
+
+        message = message.replace(
+                "{player}",
+                player.getName()
+        );
+
+        Bukkit.broadcast(
+                miniMessage.deserialize(message)
         );
     }
 
