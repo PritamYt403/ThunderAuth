@@ -51,7 +51,6 @@ settings:
     max-length: 32
 
   session:
-    # 0 = Login required after every reconnect
     timeout-seconds: 0
     remember-after-quit: true
 
@@ -132,7 +131,7 @@ announcements:
     message: "<#FFB900>FIREMC <white>» <yellow>{player}</yellow> registered."
 
 # ==========================================
-#                EFFECTS
+#                 EFFECTS
 # ==========================================
 
 effects:
@@ -141,8 +140,22 @@ effects:
     enabled: false
     remove-after-authentication: true
 
+  sounds:
+
+    enabled: true
+
+    login:
+      sound: "ENTITY_PLAYER_LEVELUP"
+      volume: 1.0
+      pitch: 1.0
+
+    register:
+      sound: "UI_TOAST_CHALLENGE_COMPLETE"
+      volume: 1.0
+      pitch: 1.0
+
 # ==========================================
-#                SPAWNS
+#                  SPAWNS
 # ==========================================
 
 spawns:
@@ -169,7 +182,7 @@ integrations:
     bedrock-support: true
 
 # ==========================================
-#              LOGGING
+#                LOGGING
 # ==========================================
 
 logging:
