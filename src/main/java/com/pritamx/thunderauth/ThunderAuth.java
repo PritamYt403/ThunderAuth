@@ -24,7 +24,8 @@ public final class ThunderAuth extends JavaPlugin {
     private File messagesFile;
     private FileConfiguration messages;
 
-    private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
+    private final AtomicBoolean shuttingDown =
+            new AtomicBoolean(false);
 
     @Override
     public void onEnable() {
@@ -34,7 +35,9 @@ public final class ThunderAuth extends JavaPlugin {
         loadMessages();
 
         getLogger().info("Starting ThunderAuth...");
-        getLogger().info("Checking license before opening account database...");
+        getLogger().info(
+                "Checking license before opening account database..."
+        );
 
         LicenseManager licenseManager = new LicenseManager(this);
 
@@ -46,8 +49,12 @@ public final class ThunderAuth extends JavaPlugin {
                     }
 
                     if (error != null) {
-                        getLogger().log(Level.SEVERE,
-                                "License validation could not complete.", error);
+                        getLogger().log(
+                                Level.SEVERE,
+                                "License validation could not complete.",
+                                error
+                        );
+
                         getServer().getPluginManager().disablePlugin(this);
                         return;
                     }
@@ -56,6 +63,7 @@ public final class ThunderAuth extends JavaPlugin {
                         getLogger().severe(
                                 "ThunderAuth disabled: a valid license is required."
                         );
+
                         getServer().getPluginManager().disablePlugin(this);
                         return;
                     }
@@ -66,29 +74,38 @@ public final class ThunderAuth extends JavaPlugin {
     }
 
     private void loadMessages() {
-        if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
+        if (!getDataFolder().exists()
+                && !getDataFolder().mkdirs()) {
             throw new IllegalStateException(
                     "Could not create plugin data folder."
             );
         }
 
-        messagesFile = new File(getDataFolder(), "messages.yml");
+        messagesFile = new File(
+                getDataFolder(),
+                "messages.yml"
+        );
 
         if (!messagesFile.exists()) {
             saveResource("messages.yml", false);
         }
 
-        messages = YamlConfiguration.loadConfiguration(messagesFile);
+        messages = YamlConfiguration.loadConfiguration(
+                messagesFile
+        );
     }
 
     private void initializeAccountDatabase() {
         try {
             String databaseName = getConfig().getString(
-                    "storage.sqlite.file", "accounts.db"
+                    "storage.sqlite.file",
+                    "accounts.db"
             );
 
             if (databaseName == null || databaseName.isBlank()) {
-                throw new IOException("Database filename is empty.");
+                throw new IOException(
+                        "Database filename is empty."
+                );
             }
 
             accountStore = new AccountStore(
@@ -99,9 +116,15 @@ public final class ThunderAuth extends JavaPlugin {
             floodgateHook = new FloodgateHook(this);
             floodgateHook.setup();
 
-            authManager = new AuthManager(this, accountStore);
+            authManager = new AuthManager(
+                    this,
+                    accountStore
+            );
 
-            AuthCommands commands = new AuthCommands(this, authManager);
+            AuthCommands commands = new AuthCommands(
+                    this,
+                    authManager
+            );
 
             registerCommand("login", commands);
             registerCommand("log", commands);
@@ -111,16 +134,26 @@ public final class ThunderAuth extends JavaPlugin {
             registerCommand("setlogspawn", commands);
             registerCommand("setregspawn", commands);
 
-            authListener = new AuthListener(this, authManager);
+            authListener = new AuthListener(
+                    this,
+                    authManager
+            );
 
             getServer().getPluginManager().registerEvents(
                     authListener,
                     this
             );
 
-        } catch (SQLException | IOException | IllegalStateException exception) {
-            getLogger().log(Level.SEVERE,
-                    "Could not initialize ThunderAuth!", exception);
+        } catch (
+                SQLException
+                | IOException
+                | IllegalStateException exception
+        ) {
+            getLogger().log(
+                    Level.SEVERE,
+                    "Could not initialize ThunderAuth!",
+                    exception
+            );
 
             getServer().getPluginManager().disablePlugin(this);
             return;
@@ -131,16 +164,26 @@ public final class ThunderAuth extends JavaPlugin {
         getLogger().info(" License: Valid");
         getLogger().info(" Database: SQLite");
         getLogger().info(" Messages: Loaded");
-        getLogger().info(" Floodgate: "
-                + (floodgateHook != null && floodgateHook.isEnabled()
-                ? "Enabled" : "Disabled / Not Found"));
+
+        getLogger().info(
+                " Floodgate: "
+                        + (floodgateHook != null
+                        && floodgateHook.isEnabled()
+                        ? "Enabled" : "Disabled / Not Found")
+        );
+
         getLogger().info(" Commands: Registered");
         getLogger().info(" Authentication Listener: Registered");
-        getLogger().info(" Version: " + getDescription().getVersion());
+        getLogger().info(
+                " Version: " + getDescription().getVersion()
+        );
         getLogger().info("--------------------------------");
     }
 
-    private void registerCommand(String name, AuthCommands executor) {
+    private void registerCommand(
+            String name,
+            AuthCommands executor
+    ) {
         PluginCommand command = getCommand(name);
 
         if (command == null) {
@@ -158,7 +201,9 @@ public final class ThunderAuth extends JavaPlugin {
 
     public void reloadMessages() {
         if (messagesFile != null) {
-            messages = YamlConfiguration.loadConfiguration(messagesFile);
+            messages = YamlConfiguration.loadConfiguration(
+                    messagesFile
+            );
         }
     }
 
@@ -168,6 +213,10 @@ public final class ThunderAuth extends JavaPlugin {
 
     public AuthManager getAuthManager() {
         return authManager;
+    }
+
+    public AuthListener getAuthListener() {
+        return authListener;
     }
 
     public FloodgateHook getFloodgateHook() {
@@ -189,21 +238,30 @@ public final class ThunderAuth extends JavaPlugin {
 
         try {
             boolean backupEnabled = getConfig().getBoolean(
-                    "storage.sqlite.backup-on-shutdown", true
+                    "storage.sqlite.backup-on-shutdown",
+                    true
             );
 
             if (backupEnabled) {
-                Path backupFolder = getDataFolder().toPath().resolve("backups");
+                Path backupFolder = getDataFolder()
+                        .toPath()
+                        .resolve("backups");
+
                 accountStore.closeAndBackup(backupFolder);
             } else {
                 accountStore.close();
             }
 
-            getLogger().info("Account database closed successfully.");
+            getLogger().info(
+                    "Account database closed successfully."
+            );
 
         } catch (SQLException | IOException exception) {
-            getLogger().log(Level.SEVERE,
-                    "Database shutdown error!", exception);
+            getLogger().log(
+                    Level.SEVERE,
+                    "Database shutdown error!",
+                    exception
+            );
         } finally {
             accountStore = null;
             authManager = null;
