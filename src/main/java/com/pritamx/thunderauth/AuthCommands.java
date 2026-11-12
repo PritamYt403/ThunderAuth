@@ -24,7 +24,10 @@ public final class AuthCommands implements CommandExecutor {
     private final Set<UUID> operationsInProgress =
             ConcurrentHashMap.newKeySet();
 
-    public AuthCommands(ThunderAuth plugin, AuthManager authManager) {
+    public AuthCommands(
+            ThunderAuth plugin,
+            AuthManager authManager
+    ) {
         this.plugin = plugin;
         this.authManager = authManager;
     }
@@ -68,7 +71,14 @@ public final class AuthCommands implements CommandExecutor {
         operationsInProgress.remove(playerId);
     }
 
-    private void handleLogin(CommandSender sender, String[] args) {
+    // --------------------------------------------------
+    // LOGIN
+    // --------------------------------------------------
+
+    private void handleLogin(
+            CommandSender sender,
+            String[] args
+    ) {
         if (!(sender instanceof Player player)) {
             send(sender, "general.players-only");
             return;
@@ -80,8 +90,12 @@ public final class AuthCommands implements CommandExecutor {
         }
 
         if (!plugin.getConfig().getBoolean(
-                "settings.login.enabled", true)) {
-            send(player, "authentication.login.account-not-registered");
+                "settings.login.enabled", true
+        )) {
+            send(
+                    player,
+                    "authentication.login.account-not-registered"
+            );
             return;
         }
 
@@ -99,6 +113,7 @@ public final class AuthCommands implements CommandExecutor {
 
         authManager.login(player, password).whenComplete(
                 (success, error) -> runOnMain(() -> {
+
                     Arrays.fill(password, '\0');
 
                     if (!player.isOnline()) {
@@ -123,14 +138,26 @@ public final class AuthCommands implements CommandExecutor {
                             && authManager.isAuthenticated(player)) {
 
                         endOperation(playerId);
-                        send(player, "authentication.login.success");
+
+                        AuthListener listener =
+                                plugin.getAuthListener();
+
+                        if (listener != null) {
+                            listener.completeAuthentication(player);
+                        }
+
+                        send(
+                                player,
+                                "authentication.login.success"
+                        );
                         return;
                     }
 
                     int maxAttempts = Math.max(
                             1,
                             plugin.getConfig().getInt(
-                                    "settings.login.max-attempts", 5
+                                    "settings.login.max-attempts",
+                                    5
                             )
                     );
 
@@ -142,7 +169,10 @@ public final class AuthCommands implements CommandExecutor {
                     endOperation(playerId);
 
                     if (remaining <= 0) {
-                        kick(player, "authentication.login.max-attempts");
+                        kick(
+                                player,
+                                "authentication.login.max-attempts"
+                        );
                     } else {
                         send(
                                 player,
@@ -155,19 +185,30 @@ public final class AuthCommands implements CommandExecutor {
         );
     }
 
-    private void handleRegister(CommandSender sender, String[] args) {
+    // --------------------------------------------------
+    // REGISTER
+    // --------------------------------------------------
+
+    private void handleRegister(
+            CommandSender sender,
+            String[] args
+    ) {
         if (!(sender instanceof Player player)) {
             send(sender, "general.players-only");
             return;
         }
 
         if (authManager.isAuthenticated(player)) {
-            send(player, "authentication.register.already-registered");
+            send(
+                    player,
+                    "authentication.register.already-registered"
+            );
             return;
         }
 
         if (!plugin.getConfig().getBoolean(
-                "settings.register.enabled", true)) {
+                "settings.register.enabled", true
+        )) {
             send(player, "authentication.register.usage");
             return;
         }
@@ -178,22 +219,28 @@ public final class AuthCommands implements CommandExecutor {
         }
 
         if (!args[0].equals(args[1])) {
-            send(player, "authentication.register.password-mismatch");
+            send(
+                    player,
+                    "authentication.register.password-mismatch"
+            );
             return;
         }
 
         int min = plugin.getConfig().getInt(
-                "settings.password.min-length", 6
+                "settings.password.min-length",
+                6
         );
 
         int max = plugin.getConfig().getInt(
-                "settings.password.max-length", 32
+                "settings.password.max-length",
+                32
         );
 
         if (min < 1 || max < min) {
             plugin.getLogger().severe(
                     "Invalid password length configuration."
             );
+
             send(player, "general.database-error");
             return;
         }
@@ -259,8 +306,11 @@ public final class AuthCommands implements CommandExecutor {
                         return;
                     }
 
-                    authManager.register(player, password).whenComplete(
-                            (success, error) -> runOnMain(() -> {
+                    authManager.register(
+                            player,
+                            password
+                    ).whenComplete((success, error) ->
+                            runOnMain(() -> {
 
                                 Arrays.fill(password, '\0');
 
@@ -278,7 +328,10 @@ public final class AuthCommands implements CommandExecutor {
                                                     + error.getMessage()
                                     );
 
-                                    send(player, "general.database-error");
+                                    send(
+                                            player,
+                                            "general.database-error"
+                                    );
                                     return;
                                 }
 
@@ -286,6 +339,15 @@ public final class AuthCommands implements CommandExecutor {
                                         && authManager.isAuthenticated(player)) {
 
                                     endOperation(playerId);
+
+                                    AuthListener listener =
+                                            plugin.getAuthListener();
+
+                                    if (listener != null) {
+                                        listener.completeAuthentication(
+                                                player
+                                        );
+                                    }
 
                                     send(
                                             player,
@@ -305,6 +367,10 @@ public final class AuthCommands implements CommandExecutor {
                 })
         );
     }
+
+    // --------------------------------------------------
+    // CHANGE PASSWORD
+    // --------------------------------------------------
 
     private void handleChangePassword(
             CommandSender sender,
@@ -326,11 +392,13 @@ public final class AuthCommands implements CommandExecutor {
         }
 
         int min = plugin.getConfig().getInt(
-                "settings.password.min-length", 6
+                "settings.password.min-length",
+                6
         );
 
         int max = plugin.getConfig().getInt(
-                "settings.password.max-length", 32
+                "settings.password.max-length",
+                32
         );
 
         if (min < 1 || max < min) {
@@ -392,7 +460,10 @@ public final class AuthCommands implements CommandExecutor {
                 send(player, "general.database-error");
 
             } else if (Boolean.TRUE.equals(changed)) {
-                send(player, "authentication.password.success");
+                send(
+                        player,
+                        "authentication.password.success"
+                );
 
             } else {
                 send(
@@ -403,7 +474,14 @@ public final class AuthCommands implements CommandExecutor {
         }));
     }
 
-    private void handleSetSpawn(CommandSender sender, boolean login) {
+    // --------------------------------------------------
+    // SPAWN COMMANDS
+    // --------------------------------------------------
+
+    private void handleSetSpawn(
+            CommandSender sender,
+            boolean login
+    ) {
         if (!(sender instanceof Player player)) {
             send(sender, "general.players-only");
             return;
@@ -421,13 +499,17 @@ public final class AuthCommands implements CommandExecutor {
             return;
         }
 
-        String path = login ? "spawns.login" : "spawns.register";
+        String path = login
+                ? "spawns.login"
+                : "spawns.register";
 
         plugin.getConfig().set(path + ".enabled", true);
+
         plugin.getConfig().set(
                 path + ".world",
                 location.getWorld().getName()
         );
+
         plugin.getConfig().set(path + ".x", location.getX());
         plugin.getConfig().set(path + ".y", location.getY());
         plugin.getConfig().set(path + ".z", location.getZ());
@@ -443,7 +525,14 @@ public final class AuthCommands implements CommandExecutor {
         sendRaw(player, message);
     }
 
-    private void handleAdmin(CommandSender sender, String[] args) {
+    // --------------------------------------------------
+    // ADMIN COMMAND
+    // --------------------------------------------------
+
+    private void handleAdmin(
+            CommandSender sender,
+            String[] args
+    ) {
         if (!sender.hasPermission("thunderauth.admin")) {
             send(sender, "general.no-permission");
             return;
@@ -462,17 +551,24 @@ public final class AuthCommands implements CommandExecutor {
         send(sender, "general.unknown-command");
     }
 
+    // --------------------------------------------------
+    // UTILITIES
+    // --------------------------------------------------
+
     private void runOnMain(Runnable action) {
         if (!plugin.isEnabled()) {
             return;
         }
 
         try {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (plugin.isEnabled()) {
-                    action.run();
-                }
-            });
+            Bukkit.getScheduler().runTask(
+                    plugin,
+                    () -> {
+                        if (plugin.isEnabled()) {
+                            action.run();
+                        }
+                    }
+            );
         } catch (IllegalStateException exception) {
             plugin.getLogger().warning(
                     "Could not schedule authentication callback: "
@@ -482,25 +578,39 @@ public final class AuthCommands implements CommandExecutor {
     }
 
     private void kick(Player player, String path) {
-        String prefix = plugin.getMessages().getString("prefix", "");
+        String prefix = plugin.getMessages().getString(
+                "prefix",
+                ""
+        );
 
         String message = plugin.getMessages().getString(
                 path,
                 "<red>Maximum login attempts reached."
         );
 
-        player.kick(miniMessage.deserialize(prefix + message));
+        player.kick(
+                miniMessage.deserialize(prefix + message)
+        );
     }
 
-    private void sendRaw(CommandSender sender, String message) {
-        String prefix = plugin.getMessages().getString("prefix", "");
+    private void sendRaw(
+            CommandSender sender,
+            String message
+    ) {
+        String prefix = plugin.getMessages().getString(
+                "prefix",
+                ""
+        );
 
         sender.sendMessage(
                 miniMessage.deserialize(prefix + message)
         );
     }
 
-    private void send(CommandSender sender, String path) {
+    private void send(
+            CommandSender sender,
+            String path
+    ) {
         send(sender, path, null, null);
     }
 
@@ -510,7 +620,10 @@ public final class AuthCommands implements CommandExecutor {
             String placeholder,
             String value
     ) {
-        String prefix = plugin.getMessages().getString("prefix", "");
+        String prefix = plugin.getMessages().getString(
+                "prefix",
+                ""
+        );
 
         String message = plugin.getMessages().getString(
                 path,
