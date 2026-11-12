@@ -213,6 +213,54 @@ public final class AuthManager {
         return future;
     }
 
+    /**
+     * Retrieves a player's saved account information asynchronously.
+     * The future is completed on the main server thread.
+     */
+    public CompletableFuture<AccountStore.Account> getAccount(
+            Player player
+    ) {
+        CompletableFuture<AccountStore.Account> future =
+                new CompletableFuture<>();
+
+        if (player == null) {
+            future.complete(null);
+            return future;
+        }
+
+        final String identity;
+
+        try {
+            identity = getIdentity(player);
+        } catch (RuntimeException exception) {
+            future.completeExceptionally(exception);
+            return future;
+        }
+
+        try {
+            Bukkit.getScheduler().runTaskAsynchronously(
+                    plugin,
+                    () -> {
+                        try {
+                            AccountStore.Account account =
+                                    accountStore.getAccount(identity);
+
+                            runOnMain(future, () ->
+                                    future.complete(account)
+                            );
+
+                        } catch (SQLException | RuntimeException exception) {
+                            future.completeExceptionally(exception);
+                        }
+                    }
+            );
+        } catch (RuntimeException exception) {
+            future.completeExceptionally(exception);
+        }
+
+        return future;
+    }
+
     public CompletableFuture<Boolean> login(
             Player player,
             char[] password
