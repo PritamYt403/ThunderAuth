@@ -42,7 +42,6 @@ public final class BossBarManager {
             return;
         }
 
-        // Remove any previous bar before creating a new one.
         remove(player);
 
         String title = getAuthenticationTitle(login);
@@ -90,6 +89,8 @@ public final class BossBarManager {
                     calculateProgress(remainingSeconds, totalSeconds)
             );
         }
+
+        bar.color(getConfiguredProgressColor());
     }
 
     public void remove(Player player) {
@@ -178,10 +179,25 @@ public final class BossBarManager {
                 DEFAULT_COLOR.name()
         );
 
-        return parseColor(value);
+        return parseColor(value, "BossBar color");
     }
 
-    private BossBar.Color parseColor(String value) {
+    private BossBar.Color getConfiguredProgressColor() {
+        String value = plugin.getConfig().getString(
+                "presentation.bossbar.progress.color",
+                plugin.getConfig().getString(
+                        "presentation.bossbar.color",
+                        DEFAULT_COLOR.name()
+                )
+        );
+
+        return parseColor(value, "BossBar progress color");
+    }
+
+    private BossBar.Color parseColor(
+            String value,
+            String settingName
+    ) {
         if (value == null || value.isBlank()) {
             return DEFAULT_COLOR;
         }
@@ -192,7 +208,7 @@ public final class BossBarManager {
             );
         } catch (IllegalArgumentException exception) {
             plugin.getLogger().warning(
-                    "Invalid BossBar color '" + value
+                    "Invalid " + settingName + " '" + value
                             + "'. Using YELLOW."
             );
 
