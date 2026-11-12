@@ -5,6 +5,7 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -40,6 +41,7 @@ import org.bukkit.scheduler.BukkitTask;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -53,6 +55,12 @@ public final class AuthListener implements Listener {
     private final Map<UUID, BukkitTask> authTasks =
             new ConcurrentHashMap<>();
 
+    private final Map<UUID, Location> previousLocations =
+            new ConcurrentHashMap<>();
+
+    private final Set<UUID> internalTeleports =
+            ConcurrentHashMap.newKeySet();
+
     public AuthListener(
             ThunderAuth plugin,
             AuthManager authManager
@@ -62,11 +70,22 @@ public final class AuthListener implements Listener {
         this.bossBarManager = new BossBarManager(plugin);
     }
 
+    // --------------------------------------------------
+    // JOIN AND AUTHENTICATION
+    // --------------------------------------------------
+
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
 
+        previousLocations.put(
+                player.getUniqueId(),
+                player.getLocation().clone()
+        );
+
         if (authManager.restoreSession(player)) {
+            previousLocations.remove(player.getUniqueId());
+
             plugin.getLogger().info(
                     "Restored authentication session for "
                             + player.getName()
@@ -78,6 +97,7 @@ public final class AuthListener implements Listener {
                 (registered, error) -> runOnMain(() -> {
 
                     if (!player.isOnline()) {
+                        previousLocations.remove(player.getUniqueId());
                         return;
                     }
 
@@ -98,16 +118,141 @@ public final class AuthListener implements Listener {
                         return;
                     }
 
-                    if (Boolean.TRUE.equals(registered)) {
+                    boolean login = Boolean.TRUE.equals(registered);
+
+                    teleportToAuthSpawn(player, login);
+
+                    if (login) {
                         showLoginPrompt(player);
-                        startAuthTimer(player, true);
                     } else {
                         showRegisterPrompt(player);
-                        startAuthTimer(player, false);
                     }
+
+                    startAuthTimer(player, login);
                 })
         );
     }
+
+    private void teleportToAuthSpawn(
+            Player player,
+            boolean login
+    ) {
+        String path = login
+                ? "spawns.login"
+                : "spawns.register";
+
+        if (!plugin.getConfig().getBoolean(
+                path + ".enabled", false
+        )) {
+            return;
+        }
+
+        String worldName = plugin.getConfig().getString(
+                path + ".world"
+        );
+
+        if (worldName == null || worldName.isBlank()) {
+            plugin.getLogger().warning(
+                    "Authentication spawn world is missing: " + path
+            );
+            return;
+        }
+
+        World world = Bukkit.getWorld(worldName);
+
+        if (world == null) {
+            plugin.getLogger().warning(
+                    "Authentication spawn world is not loaded: "
+                            + worldName
+            );
+            return;
+        }
+
+        Location target = new Location(
+                world,
+                plugin.getConfig().getDouble(path + ".x"),
+                plugin.getConfig().getDouble(path + ".y"),
+                plugin.getConfig().getDouble(path + ".z"),
+                (float) plugin.getConfig().getDouble(path + ".yaw"),
+                (float) plugin.getConfig().getDouble(path + ".pitch")
+        );
+
+        if (!target.isWorldLoaded()) {
+            plugin.getLogger().warning(
+                    "Authentication spawn location is invalid: " + path
+            );
+            return;
+        }
+
+        UUID uuid = player.getUniqueId();
+
+        internalTeleports.add(uuid);
+
+        try {
+            boolean success = player.teleport(
+                    target,
+                    PlayerTeleportEvent.TeleportCause.PLUGIN
+            );
+
+            if (!success) {
+                plugin.getLogger().warning(
+                        "Could not teleport " + player.getName()
+                                + " to authentication spawn."
+                );
+            }
+        } finally {
+            internalTeleports.remove(uuid);
+        }
+    }
+
+    /**
+     * Called after a successful login or registration.
+     * AuthCommands will call this method in the next update.
+     */
+    public void completeAuthentication(Player player) {
+        if (player == null || !player.isOnline()) {
+            return;
+        }
+
+        UUID uuid = player.getUniqueId();
+
+        cancelAuthTimer(uuid);
+        bossBarManager.remove(player);
+
+        boolean returnToPrevious = plugin.getConfig().getBoolean(
+                "spawns.return-to-previous-location", true
+        );
+
+        Location previous = previousLocations.remove(uuid);
+
+        if (!returnToPrevious
+                || previous == null
+                || previous.getWorld() == null) {
+            return;
+        }
+
+        internalTeleports.add(uuid);
+
+        try {
+            boolean success = player.teleport(
+                    previous,
+                    PlayerTeleportEvent.TeleportCause.PLUGIN
+            );
+
+            if (!success) {
+                plugin.getLogger().warning(
+                        "Could not return " + player.getName()
+                                + " to their previous location."
+                );
+            }
+        } finally {
+            internalTeleports.remove(uuid);
+        }
+    }
+
+    // --------------------------------------------------
+    // TITLE AND PROMPTS
+    // --------------------------------------------------
 
     private void showLoginPrompt(Player player) {
         String title = plugin.getConfig().getString(
@@ -186,6 +331,10 @@ public final class AuthListener implements Listener {
                 )
         );
     }
+
+    // --------------------------------------------------
+    // AUTHENTICATION TIMER
+    // --------------------------------------------------
 
     private void startAuthTimer(
             Player player,
@@ -346,6 +495,10 @@ public final class AuthListener implements Listener {
         );
     }
 
+    // --------------------------------------------------
+    // SCHEDULER AND MESSAGES
+    // --------------------------------------------------
+
     private void runOnMain(Runnable action) {
         if (!plugin.isEnabled()) {
             return;
@@ -399,7 +552,10 @@ public final class AuthListener implements Listener {
         );
     }
 
-    // Lock position while allowing camera rotation.
+    // --------------------------------------------------
+    // MOVEMENT AND TELEPORT SECURITY
+    // --------------------------------------------------
+
     @EventHandler(
             priority = EventPriority.HIGHEST,
             ignoreCancelled = true
@@ -434,11 +590,21 @@ public final class AuthListener implements Listener {
             ignoreCancelled = true
     )
     public void onTeleport(PlayerTeleportEvent event) {
+        if (internalTeleports.contains(
+                event.getPlayer().getUniqueId()
+        )) {
+            return;
+        }
+
         if (securityEnabled("prevent-teleport-before-auth")
                 && isBlocked(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
+
+    // --------------------------------------------------
+    // CHAT AND COMMAND SECURITY
+    // --------------------------------------------------
 
     @EventHandler(
             priority = EventPriority.HIGHEST,
@@ -486,6 +652,10 @@ public final class AuthListener implements Listener {
         );
     }
 
+    // --------------------------------------------------
+    // BLOCK SECURITY
+    // --------------------------------------------------
+
     @EventHandler(
             priority = EventPriority.HIGHEST,
             ignoreCancelled = true
@@ -518,6 +688,10 @@ public final class AuthListener implements Listener {
             event.setCancelled(true);
         }
     }
+
+    // --------------------------------------------------
+    // INTERACTION AND INVENTORY SECURITY
+    // --------------------------------------------------
 
     @EventHandler(
             priority = EventPriority.HIGHEST,
@@ -577,6 +751,10 @@ public final class AuthListener implements Listener {
         }
     }
 
+    // --------------------------------------------------
+    // DAMAGE SECURITY
+    // --------------------------------------------------
+
     @EventHandler(
             priority = EventPriority.HIGHEST,
             ignoreCancelled = true
@@ -600,6 +778,10 @@ public final class AuthListener implements Listener {
             event.setCancelled(true);
         }
     }
+
+    // --------------------------------------------------
+    // ITEM AND PLAYER ACTION SECURITY
+    // --------------------------------------------------
 
     @EventHandler(
             priority = EventPriority.HIGHEST,
@@ -703,12 +885,20 @@ public final class AuthListener implements Listener {
         }
     }
 
+    // --------------------------------------------------
+    // QUIT AND SHUTDOWN
+    // --------------------------------------------------
+
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
+        UUID uuid = player.getUniqueId();
 
-        cancelAuthTimer(player.getUniqueId());
+        cancelAuthTimer(uuid);
         bossBarManager.remove(player);
+
+        previousLocations.remove(uuid);
+        internalTeleports.remove(uuid);
 
         authManager.removeAuthenticated(player);
     }
@@ -719,6 +909,9 @@ public final class AuthListener implements Listener {
         }
 
         authTasks.clear();
+        previousLocations.clear();
+        internalTeleports.clear();
+
         bossBarManager.removeAll();
     }
 }
