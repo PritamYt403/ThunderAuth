@@ -387,18 +387,16 @@ public final class AuthCommands implements CommandExecutor {
             return;
         }
 
-        String enabledPath = "announcements." + type + ".enabled";
+        String basePath = "announcements." + type;
 
         if (!plugin.getConfig().getBoolean(
-                enabledPath, true
+                basePath + ".enabled", true
         )) {
             return;
         }
 
-        String messagePath = "announcements." + type;
-
-        String message = plugin.getMessages().getString(
-                messagePath,
+        String message = plugin.getConfig().getString(
+                basePath + ".message",
                 ""
         );
 
