@@ -222,9 +222,23 @@ public final class AuthListener implements Listener {
     }
 
     /**
-     * Called after a successful login or registration.
+     * Backward-compatible completion method.
+     * Treats the authentication as registration.
      */
     public void completeAuthentication(Player player) {
+        completeAuthentication(player, false);
+    }
+
+    /**
+     * Called after successful authentication.
+     *
+     * @param player the authenticated player
+     * @param login true for login, false for registration
+     */
+    public void completeAuthentication(
+            Player player,
+            boolean login
+    ) {
         if (player == null || !player.isOnline()) {
             return;
         }
@@ -234,32 +248,131 @@ public final class AuthListener implements Listener {
         cancelAuthTimer(uuid);
         bossBarManager.remove(player);
 
-        boolean returnToPrevious = plugin.getConfig().getBoolean(
-                "spawns.return-to-previous-location", true
-        );
-
         Location previous = previousLocations.remove(uuid);
 
-        if (!returnToPrevious
-                || previous == null
-                || previous.getWorld() == null) {
+        boolean returnToFirstRegistration =
+                login && plugin.getConfig().getBoolean(
+                        "spawns.return-to-first-register-location",
+                        false
+                );
+
+        if (returnToFirstRegistration) {
+            authManager.getAccount(player).whenComplete(
+                    (account, error) -> runOnMain(() -> {
+
+                        if (!player.isOnline()) {
+                            return;
+                        }
+
+                        if (error != null) {
+                            plugin.getLogger().warning(
+                                    "Could not retrieve first registration "
+                                            + "location for "
+                                            + player.getName() + ": "
+                                            + error.getMessage()
+                            );
+
+                            returnToPreviousLocation(player, previous);
+                            return;
+                        }
+
+                        if (account != null) {
+                            String worldName = account.firstWorld();
+
+                            if (worldName != null && !worldName.isBlank()) {
+                                World world = Bukkit.getWorld(worldName);
+
+                                if (world != null) {
+                                    Location firstLocation = new Location(
+                                            world,
+                                            account.firstX(),
+                                            account.firstY(),
+                                            account.firstZ(),
+                                            account.firstYaw(),
+                                            account.firstPitch()
+                                    );
+
+                                    if (firstLocation.isWorldLoaded()
+                                            && teleportInternally(
+                                                    player,
+                                                    firstLocation
+                                            )) {
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+
+                        plugin.getLogger().warning(
+                                "First registration location is unavailable "
+                                        + "for " + player.getName()
+                                        + ". Falling back to previous location."
+                        );
+
+                        returnToPreviousLocation(player, previous);
+                    })
+            );
+
             return;
         }
+
+        returnToPreviousLocation(player, previous);
+    }
+
+    private void returnToPreviousLocation(
+            Player player,
+            Location previous
+    ) {
+        if (player == null
+                || !player.isOnline()
+                || !plugin.getConfig().getBoolean(
+                        "spawns.return-to-previous-location",
+                        true
+                )
+                || previous == null
+                || previous.getWorld() == null
+                || !previous.isWorldLoaded()) {
+            return;
+        }
+
+        if (!teleportInternally(player, previous)) {
+            plugin.getLogger().warning(
+                    "Could not return " + player.getName()
+                            + " to their previous location."
+            );
+        }
+    }
+
+    private boolean teleportInternally(
+            Player player,
+            Location target
+    ) {
+        if (player == null
+                || !player.isOnline()
+                || target == null
+                || target.getWorld() == null
+                || !target.isWorldLoaded()) {
+            return false;
+        }
+
+        UUID uuid = player.getUniqueId();
 
         internalTeleports.add(uuid);
 
         try {
             boolean success = player.teleport(
-                    previous,
+                    target,
                     PlayerTeleportEvent.TeleportCause.PLUGIN
             );
 
             if (!success) {
                 plugin.getLogger().warning(
-                        "Could not return " + player.getName()
-                                + " to their previous location."
+                        "Could not teleport " + player.getName()
+                                + " to the requested authentication location."
                 );
             }
+
+            return success;
         } finally {
             internalTeleports.remove(uuid);
         }
