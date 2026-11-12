@@ -108,6 +108,8 @@ public final class ThunderAuth extends JavaPlugin {
             registerCommand("register", commands);
             registerCommand("changepass", commands);
             registerCommand("thunderauth", commands);
+            registerCommand("setlogspawn", commands);
+            registerCommand("setregspawn", commands);
 
             authListener = new AuthListener(this, authManager);
 
