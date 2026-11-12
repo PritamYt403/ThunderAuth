@@ -11,6 +11,8 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.sql.*;
 import java.util.Base64;
+import java.util.HashSet;
+import java.util.Set;
 
 public final class AccountStore {
 
@@ -115,6 +117,87 @@ public final class AccountStore {
                 )
             """);
         }
+
+        migrateAccountTable(db);
+    }
+
+    /**
+     * Adds missing location columns to older account databases.
+     *
+     * This migration is safe to run repeatedly.
+     * Existing account records and password data are preserved.
+     */
+    private void migrateAccountTable(Connection db) throws SQLException {
+
+        Set<String> existingColumns = new HashSet<>();
+
+        try (Statement statement = db.createStatement();
+             ResultSet result = statement.executeQuery(
+                     "PRAGMA table_info(accounts)"
+             )) {
+
+            while (result.next()) {
+                existingColumns.add(
+                        result.getString("name").toLowerCase()
+                );
+            }
+        }
+
+        if (existingColumns.isEmpty()) {
+            throw new SQLException(
+                    "Could not inspect the accounts database table."
+            );
+        }
+
+        addColumnIfMissing(
+                db, existingColumns, "first_world", "TEXT"
+        );
+
+        addColumnIfMissing(
+                db, existingColumns, "first_x",
+                "REAL NOT NULL DEFAULT 0"
+        );
+
+        addColumnIfMissing(
+                db, existingColumns, "first_y",
+                "REAL NOT NULL DEFAULT 0"
+        );
+
+        addColumnIfMissing(
+                db, existingColumns, "first_z",
+                "REAL NOT NULL DEFAULT 0"
+        );
+
+        addColumnIfMissing(
+                db, existingColumns, "first_yaw",
+                "REAL NOT NULL DEFAULT 0"
+        );
+
+        addColumnIfMissing(
+                db, existingColumns, "first_pitch",
+                "REAL NOT NULL DEFAULT 0"
+        );
+    }
+
+    private void addColumnIfMissing(
+            Connection db,
+            Set<String> existingColumns,
+            String columnName,
+            String columnDefinition
+    ) throws SQLException {
+
+        if (existingColumns.contains(columnName.toLowerCase())) {
+            return;
+        }
+
+        String sql = "ALTER TABLE accounts ADD COLUMN "
+                + columnName + " " + columnDefinition;
+
+        try (Statement statement = db.createStatement()) {
+            statement.execute(sql);
+        }
+
+        existingColumns.add(columnName.toLowerCase());
     }
 
     public synchronized boolean isRegistered(String identity)
