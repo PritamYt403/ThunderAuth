@@ -65,10 +65,7 @@ public final class AuthManager {
             return;
         }
 
-        /*
-         * Offline Mode identities are username-derived.
-         * Remembered sessions are therefore disabled in Offline Mode.
-         */
+        // Remembered sessions are disabled in Offline Mode.
         if (!Bukkit.getOnlineMode()) {
             return;
         }
@@ -96,7 +93,6 @@ public final class AuthManager {
             return player != null && isAuthenticated(player);
         }
 
-        // Never restore sessions on cracked / Offline Mode servers.
         if (!Bukkit.getOnlineMode()) {
             return false;
         }
@@ -132,6 +128,12 @@ public final class AuthManager {
     }
 
     public String getIdentity(Player player) {
+        if (player == null) {
+            throw new IllegalArgumentException(
+                    "Player cannot be null."
+            );
+        }
+
         FloodgateHook hook = plugin.getFloodgateHook();
 
         if (hook != null && hook.isEnabled()) {
@@ -177,6 +179,11 @@ public final class AuthManager {
     public CompletableFuture<Boolean> isRegistered(Player player) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
 
+        if (player == null) {
+            future.complete(false);
+            return future;
+        }
+
         final String identity;
 
         try {
@@ -187,13 +194,18 @@ public final class AuthManager {
         }
 
         try {
-            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-                try {
-                    future.complete(accountStore.isRegistered(identity));
-                } catch (SQLException | RuntimeException exception) {
-                    future.completeExceptionally(exception);
-                }
-            });
+            Bukkit.getScheduler().runTaskAsynchronously(
+                    plugin,
+                    () -> {
+                        try {
+                            future.complete(
+                                    accountStore.isRegistered(identity)
+                            );
+                        } catch (SQLException | RuntimeException exception) {
+                            future.completeExceptionally(exception);
+                        }
+                    }
+            );
         } catch (RuntimeException exception) {
             future.completeExceptionally(exception);
         }
@@ -224,32 +236,36 @@ public final class AuthManager {
         }
 
         try {
-            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-                try {
-                    boolean valid = accountStore.verifyPassword(
-                            identity,
-                            passwordCopy
-                    );
+            Bukkit.getScheduler().runTaskAsynchronously(
+                    plugin,
+                    () -> {
+                        try {
+                            boolean valid = accountStore.verifyPassword(
+                                    identity,
+                                    passwordCopy
+                            );
 
-                    if (valid) {
-                        accountStore.updateLastLogin(identity);
-                    }
+                            if (valid) {
+                                accountStore.updateLastLogin(identity);
+                            }
 
-                    runOnMain(future, () -> {
-                        if (valid && player.isOnline()) {
-                            setAuthenticated(player);
+                            runOnMain(future, () -> {
+                                if (valid && player.isOnline()) {
+                                    setAuthenticated(player);
+                                }
+
+                                future.complete(valid);
+                            });
+
+                        } catch (SQLException
+                                 | GeneralSecurityException
+                                 | RuntimeException exception) {
+                            future.completeExceptionally(exception);
+                        } finally {
+                            Arrays.fill(passwordCopy, '\0');
                         }
-
-                        future.complete(valid);
-                    });
-
-                } catch (SQLException | GeneralSecurityException
-                         | RuntimeException exception) {
-                    future.completeExceptionally(exception);
-                } finally {
-                    Arrays.fill(passwordCopy, '\0');
-                }
-            });
+                    }
+            );
         } catch (RuntimeException exception) {
             Arrays.fill(passwordCopy, '\0');
             future.completeExceptionally(exception);
@@ -284,12 +300,33 @@ public final class AuthManager {
             identity = getIdentity(player);
             username = player.getName();
 
-            Location location = player.getLocation().clone();
+            /*
+             * Prefer the original location captured when the player joined.
+             * This avoids saving the registration spawn as their first
+             * location when authentication spawn teleportation is enabled.
+             */
+            Location location = null;
 
-            world = location.getWorld() == null
-                    ? "world"
-                    : location.getWorld().getName();
+            AuthListener listener = plugin.getAuthListener();
 
+            if (listener != null) {
+                location = listener.getOriginalJoinLocation(player);
+            }
+
+            // Safe fallback if the original location is unavailable.
+            if (location == null) {
+                location = player.getLocation().clone();
+            } else {
+                location = location.clone();
+            }
+
+            if (location.getWorld() == null) {
+                throw new IllegalArgumentException(
+                        "Player location has no world."
+                );
+            }
+
+            world = location.getWorld().getName();
             x = location.getX();
             y = location.getY();
             z = location.getZ();
@@ -303,35 +340,39 @@ public final class AuthManager {
         }
 
         try {
-            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-                try {
-                    boolean registered = accountStore.register(
-                            identity,
-                            username,
-                            passwordCopy,
-                            world,
-                            x,
-                            y,
-                            z,
-                            yaw,
-                            pitch
-                    );
+            Bukkit.getScheduler().runTaskAsynchronously(
+                    plugin,
+                    () -> {
+                        try {
+                            boolean registered = accountStore.register(
+                                    identity,
+                                    username,
+                                    passwordCopy,
+                                    world,
+                                    x,
+                                    y,
+                                    z,
+                                    yaw,
+                                    pitch
+                            );
 
-                    runOnMain(future, () -> {
-                        if (registered && player.isOnline()) {
-                            setAuthenticated(player);
+                            runOnMain(future, () -> {
+                                if (registered && player.isOnline()) {
+                                    setAuthenticated(player);
+                                }
+
+                                future.complete(registered);
+                            });
+
+                        } catch (SQLException
+                                 | GeneralSecurityException
+                                 | RuntimeException exception) {
+                            future.completeExceptionally(exception);
+                        } finally {
+                            Arrays.fill(passwordCopy, '\0');
                         }
-
-                        future.complete(registered);
-                    });
-
-                } catch (SQLException | GeneralSecurityException
-                         | RuntimeException exception) {
-                    future.completeExceptionally(exception);
-                } finally {
-                    Arrays.fill(passwordCopy, '\0');
-                }
-            });
+                    }
+            );
         } catch (RuntimeException exception) {
             Arrays.fill(passwordCopy, '\0');
             future.completeExceptionally(exception);
@@ -366,24 +407,30 @@ public final class AuthManager {
         }
 
         try {
-            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-                try {
-                    boolean changed = accountStore.changePassword(
-                            identity,
-                            oldCopy,
-                            newCopy
-                    );
+            Bukkit.getScheduler().runTaskAsynchronously(
+                    plugin,
+                    () -> {
+                        try {
+                            boolean changed = accountStore.changePassword(
+                                    identity,
+                                    oldCopy,
+                                    newCopy
+                            );
 
-                    future.complete(changed);
+                            runOnMain(future, () ->
+                                    future.complete(changed)
+                            );
 
-                } catch (SQLException | GeneralSecurityException
-                         | RuntimeException exception) {
-                    future.completeExceptionally(exception);
-                } finally {
-                    Arrays.fill(oldCopy, '\0');
-                    Arrays.fill(newCopy, '\0');
-                }
-            });
+                        } catch (SQLException
+                                 | GeneralSecurityException
+                                 | RuntimeException exception) {
+                            future.completeExceptionally(exception);
+                        } finally {
+                            Arrays.fill(oldCopy, '\0');
+                            Arrays.fill(newCopy, '\0');
+                        }
+                    }
+            );
         } catch (RuntimeException exception) {
             Arrays.fill(oldCopy, '\0');
             Arrays.fill(newCopy, '\0');
